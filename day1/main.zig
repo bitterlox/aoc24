@@ -15,8 +15,6 @@ fn getInput(allocator: std.mem.Allocator) anyerror!Numbers {
     const file = std.fs.cwd().openFile("input.txt", .{}) catch |err| return err;
     defer file.close();
 
-    std.debug.print("got path", .{});
-
     var buf_reader = std.io.bufferedReader(file.reader());
     var in_stream = buf_reader.reader();
 
@@ -46,6 +44,81 @@ fn sortInput(numbers: Numbers) void {
     std.mem.sort(u64, numbers.right, {}, std.sort.asc(u64));
 }
 
+fn calculateDistance(left: u64, right: u64) u64 {
+    // var rightB = try std.math.big.int.Managed.init(allocator);
+    // defer rightB.deinit();
+    // try rightB.set(right);
+
+    // var leftB = try std.math.big.int.Managed.init(allocator);
+    // defer leftB.deinit();
+    // try leftB.set(left);
+
+    // var tmp = try std.math.big.int.Managed.init(allocator);
+    // defer tmp.deinit();
+    // try tmp.sub(&rightB, &leftB);
+
+    const result = @as(i64, @intCast(left)) - @as(i64, @intCast(right));
+
+    return @abs(result);
+}
+
+fn getFirstResult(numbers: Numbers) u64 {
+    var result: u64 = 0;
+
+    for (numbers.left, numbers.right) |left, right| {
+        result += calculateDistance(left, right);
+    }
+
+    return result;
+}
+
+const FrequencyMap = std.AutoHashMap(u64, u8);
+
+/// caller takes ownership of result
+fn makeFrequencyMap(allocator: std.mem.Allocator, numbers: Numbers) !FrequencyMap {
+    var rightMap = std.AutoHashMap(u64, u8).init(allocator);
+    defer rightMap.deinit();
+    var frequencyMap = std.AutoHashMap(u64, u8).init(allocator);
+
+    for (numbers.right) |right| {
+        const maybeCountInList = rightMap.get(right);
+        if (maybeCountInList) |count| {
+            try rightMap.put(right, count + 1);
+        } else {
+            try rightMap.put(right, 1);
+        }
+    }
+
+    // var it = rightMap.iterator();
+
+    // while (it.next()) |entry| {
+    //     std.debug.print("{}: {}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    // }
+
+    for (numbers.left) |left| {
+        const found = rightMap.get(left);
+        if (found) |count| {
+            try frequencyMap.put(left, count);
+        } else {
+            try frequencyMap.put(left, 0);
+        }
+    }
+    return frequencyMap;
+}
+
+fn getSecondResult(map: FrequencyMap) u64 {
+    var result: u64 = 0;
+
+    var it = map.iterator();
+
+    while (it.next()) |entry| {
+        result += entry.key_ptr.* * entry.value_ptr.*;
+        // std.debug.print("{}: {}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    }
+
+    return result;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -55,24 +128,15 @@ pub fn main() !void {
     const numbers = getInput(allocator) catch unreachable;
     sortInput(numbers);
 
-    var result = try std.math.big.int.Managed.init(allocator);
-    defer result.deinit();
+    std.debug.print("result: {d}\n", .{getFirstResult(numbers)});
 
-    for (numbers.left, numbers.right) |left, right| {
-        var rightB = try std.math.big.int.Managed.init(allocator);
-        defer rightB.deinit();
-        try rightB.set(right);
+    const map = try makeFrequencyMap(allocator, numbers);
 
-        var leftB = try std.math.big.int.Managed.init(allocator);
-        defer leftB.deinit();
-        try leftB.set(left);
+    var it = map.iterator();
 
-        var tmp = try std.math.big.int.Managed.init(allocator);
-        defer tmp.deinit();
-        try tmp.sub(&leftB, &rightB);
-
-        // std.debug.print("tmp: {s}", .{try tmp.toString(allocator, 10, std.fmt.Case.lower)});
-        try result.add(&result, &tmp);
+    while (it.next()) |entry| {
+        std.debug.print("{}: {}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
     }
-    std.debug.print("result: {s}", .{try result.toString(allocator, 10, std.fmt.Case.lower)});
+
+    std.debug.print("result2: {}\n", .{getSecondResult(map)});
 }
