@@ -1,4 +1,5 @@
 const std = @import("std");
+const levels = @import("levels.zig");
 
 const Report = struct {
     levels: []u8,
@@ -7,6 +8,7 @@ const Report = struct {
     const Self = @This();
 
     /// caller owns the associated memory
+    // but does he really if the struct has a deinit? i think so
     fn init(arrayList: *std.ArrayList(u8)) !Self {
         const slice = try arrayList.toOwnedSlice();
         return Self{
@@ -15,12 +17,20 @@ const Report = struct {
         };
     }
 
-    fn deinit(self: *Self) !void {
+    fn deinit(self: *Self) void {
         self.allocator.free(self.levels);
     }
 
-    fn is_safe() bool {
-        return false;
+    fn is_safe(self: *Self) !bool {
+        if (self.levels.len < 2) unreachable;
+
+        return try levels.are_safe(self.allocator, self.levels);
+    }
+
+    fn is_safe_dampened(self: *Self) !bool {
+        if (self.levels.len < 2) unreachable;
+
+        return try levels.are_safe_dampened(self.allocator, self.levels);
     }
 };
 
@@ -39,13 +49,25 @@ const Data = struct {
         };
     }
 
-    fn deinit(self: *Self) !void {
-        for (self.reports) |rep| rep.deinit();
+    fn deinit(self: *Self) void {
+        for (self.reports) |*rep| rep.deinit();
         self.allocator.free(self.reports);
     }
 
-    fn is_safe() bool {
-        return false;
+    fn safe_count(self: *Self) !u64 {
+        var count: u64 = 0;
+        for (self.reports) |*report| {
+            if (try report.is_safe()) count += 1;
+        }
+        return count;
+    }
+
+    fn dampened_safe_count(self: *Self) !u64 {
+        var count: u64 = 0;
+        for (self.reports) |*report| {
+            if (try report.is_safe_dampened()) count += 1;
+        }
+        return count;
     }
 };
 
@@ -84,10 +106,13 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const data = try get_input(allocator);
+    var data = try get_input(allocator);
     defer data.deinit();
 
-    for (data.reports) |rep| {
-        std.debug.print("{d}\n", .{rep.levels});
-    }
+    // for (data.reports) |rep| {
+    //     std.debug.print("{d}\n", .{rep.levels});
+    // }
+
+    std.debug.print("{d}\n", .{try data.safe_count()});
+    std.debug.print("{d}\n", .{try data.dampened_safe_count()});
 }
