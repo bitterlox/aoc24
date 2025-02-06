@@ -1,5 +1,5 @@
 const std = @import("std");
-const find_muls = @import("find_muls.zig").find_muls;
+const lib = @import("lib.zig");
 
 /// Caller takes ownership of the result
 fn get_input(allocator: std.mem.Allocator) anyerror![]u8 {
@@ -22,11 +22,32 @@ fn get_input(allocator: std.mem.Allocator) anyerror![]u8 {
     return try list.toOwnedSlice();
 }
 
-fn add_muls(muls: []const [2]u64) u64 {
+fn first_result(allocator: std.mem.Allocator, input: []u8) !u64 {
+    const muls = try lib.find_muls(allocator, input);
+    defer allocator.free(muls);
+
     var sum: u64 = 0;
     for (muls) |arr| {
         const a, const b = arr;
         sum += a * b;
+    }
+    return sum;
+}
+
+fn second_result(allocator: std.mem.Allocator, input: []u8) !u64 {
+    const ops = try lib.parse_string(allocator, input);
+    defer allocator.free(ops);
+
+    var sum: u64 = 0;
+    var add = true;
+    for (ops) |op| {
+        switch (op) {
+            .mul => |arr| {
+                if (add) sum += arr[0] * arr[1];
+            },
+            .do => add = true,
+            .dont => add = false,
+        }
     }
     return sum;
 }
@@ -37,8 +58,6 @@ pub fn main() !void {
 
     const input = try get_input(allocator);
 
-    const muls = try find_muls(allocator, input);
-    defer allocator.free(muls);
-
-    std.debug.print("result: {d}", .{add_muls(muls)});
+    std.debug.print("result: {d}\n", .{try first_result(allocator, input)});
+    std.debug.print("result: {d}", .{try second_result(allocator, input)});
 }
