@@ -15,9 +15,23 @@ test "find_xmases - example 1" {
     try testing.expectEqual(expected, find_xmases_in_string(input));
 }
 
+test "find_xmases - str less than 4" {
+    const input = "MMM";
+    const expected = 0;
+    try testing.expectEqual(expected, find_xmases_in_string(input));
+}
+
+test "find_xmases - str is 4" {
+    const input = "XMAS";
+    const expected = 1;
+    try testing.expectEqual(expected, find_xmases_in_string(input));
+}
+
 // TODO: guard against slices less than 4 elements long
 pub fn find_xmases_in_string(str: []const u8) u64 {
     var result: u64 = 0;
+
+    if (str.len < 4) return result;
 
     const view_start_min_idx = 0;
     const view_start_max_idx = str.len - 3;
@@ -196,26 +210,6 @@ pub fn make_columns(allocator: std.mem.Allocator, str: []const []const u8) ![]co
     return try result.toOwnedSlice();
 }
 
-test "find_xmases_in_matrix - example 2" {
-    const allocator = std.testing.allocator;
-    const input: []const []const u8 = &[_][]const u8{
-        "MMMSXXMASM",
-        "MSAMXMSMSA",
-        "AMXSXMAAMM",
-        "MSAMASMSMX",
-        "XMASAMXAMM",
-        "XXAMMXXAMA",
-        "SMSMSASXSS",
-        "SAXAMASAAA",
-        "MAMMMXMMMM",
-        "MXMXAXMASX",
-    };
-    const expected: u64 = 18;
-    const actual = try find_xmases_in_matrix(allocator, input);
-
-    try testing.expectEqualDeep(expected, actual);
-}
-
 test "reverse_rows - example 2" {
     const allocator = std.testing.allocator;
     const input: []const []const u8 = &[_][]const u8{
@@ -270,16 +264,123 @@ pub fn reverse_rows(allocator: std.mem.Allocator, str: []const []const u8) ![]co
     return try result.toOwnedSlice();
 }
 
-// wrap it up tomorrow, have all the pieces now
-// diagonals, columns, reverse
+test "find_xmases_in_matrix - overlapping" {
+    const allocator = std.testing.allocator;
+    const input: []const []const u8 = &[_][]const u8{
+        "XMASAMXASM",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+        "XXXXXXXXXX",
+    };
+    const expected: u64 = 2;
+    const actual = try find_xmases_in_matrix(allocator, input);
+
+    try testing.expectEqual(expected, actual);
+}
+
+test "find_xmases_in_matrix - example 2" {
+    const allocator = std.testing.allocator;
+    const input: []const []const u8 = &[_][]const u8{
+        "MMMSXXMASM",
+        "MSAMXMSMSA",
+        "AMXSXMAAMM",
+        "MSAMASMSMX",
+        "XMASAMXAMM",
+        "XXAMMXXAMA",
+        "SMSMSASXSS",
+        "SAXAMASAAA",
+        "MAMMMXMMMM",
+        "MXMXAXMASX",
+    };
+    const expected: u64 = 18;
+    const actual = try find_xmases_in_matrix(allocator, input);
+
+    try testing.expectEqualDeep(expected, actual);
+}
+
 pub fn find_xmases_in_matrix(allocator: std.mem.Allocator, matrix: []const []const u8) !u64 {
     var count: u64 = 0;
 
+    // horizontal
     for (matrix) |str| {
         count += find_xmases_in_string(str);
     }
 
-    _ = allocator;
+    // horizontal written backward
+    const reversed = try reverse_rows(allocator, matrix);
+    defer {
+        for (reversed) |col| allocator.free(col);
+        allocator.free(reversed);
+    }
+    for (reversed) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // vertical
+    const swapped_columns = try make_columns(allocator, matrix);
+    defer {
+        for (swapped_columns) |col| allocator.free(col);
+        allocator.free(swapped_columns);
+    }
+    for (swapped_columns) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // vertical written backwards
+    const reversed_columns = try reverse_rows(allocator, swapped_columns);
+    defer {
+        for (reversed_columns) |col| allocator.free(col);
+        allocator.free(reversed_columns);
+    }
+    for (reversed_columns) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // diagonals from the left
+    const diagonals_left = try make_diagonals(allocator, matrix);
+    defer {
+        for (diagonals_left) |col| allocator.free(col);
+        allocator.free(diagonals_left);
+    }
+    for (diagonals_left) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // diagonals from the left written backwards
+    const reversed_diagonals_left = try reverse_rows(allocator, diagonals_left);
+    defer {
+        for (reversed_diagonals_left) |col| allocator.free(col);
+        allocator.free(reversed_diagonals_left);
+    }
+    for (reversed_diagonals_left) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // diagonals from the right
+    const diagonals_right = try make_diagonals(allocator, reversed);
+    defer {
+        for (diagonals_right) |col| allocator.free(col);
+        allocator.free(diagonals_right);
+    }
+    for (diagonals_right) |str| {
+        count += find_xmases_in_string(str);
+    }
+
+    // diagonals from the left written backwards
+    const reversed_diagonals_right = try reverse_rows(allocator, diagonals_right);
+    defer {
+        for (reversed_diagonals_right) |col| allocator.free(col);
+        allocator.free(reversed_diagonals_right);
+    }
+    for (reversed_diagonals_right) |str| {
+        count += find_xmases_in_string(str);
+    }
 
     return count;
 }
