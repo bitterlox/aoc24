@@ -38,8 +38,9 @@ pub fn main() !void {
         allocator.free(input);
     }
 
-    // result is too low, do more stuff
-    const result = try lib.find_xmases_in_matrix(allocator, input);
+    const result_pt1 = try lib.find_xmases_in_matrix(allocator, input);
+    const result_pt2 = try lib.find_xmases(allocator, input);
 
-    std.debug.print("line: {d}\n", .{result});
+    std.debug.print("result part 1: {d}\n", .{result_pt1});
+    std.debug.print("result part 2: {d}\n", .{result_pt2});
 }

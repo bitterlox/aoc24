@@ -44,6 +44,58 @@ pub fn find_xmases_in_string(str: []const u8) u64 {
     return result;
 }
 
+test "find_x_mases_in_matrix - example 2" {
+    const allocator = std.testing.allocator;
+    const input: []const []const u8 = &[_][]const u8{
+        "MMS",
+        "MAA",
+        "MMS",
+    };
+    const expected: u64 = 1;
+    const actual = try find_x_mases_in_matrix(allocator, input);
+
+    try testing.expectEqualDeep(expected, actual);
+}
+
+// TODO: guard against slices less than 4 elements long
+pub fn find_x_mases_in_matrix(allocator: std.mem.Allocator, str: []const []const u8) !u64 {
+    var result: u64 = 0;
+
+    if (str.len < 3) return result;
+
+    for (0..str.len - 2) |row_idx| {
+        for (0..str.len - 2) |i| {
+            const j = i + 2;
+            var list = std.ArrayList(u8).init(allocator);
+            defer list.deinit();
+
+            for (row_idx..row_idx + 3) |row_i| {
+                const view = str[row_i][i .. j + 1];
+                try list.appendSlice(view);
+            }
+
+            const letters = try list.toOwnedSlice();
+            defer allocator.free(letters);
+
+            if (letters[0] != 'M' or letters[6] != 'M') {
+                continue;
+            }
+
+            if (letters[2] != 'S' or letters[8] != 'S') {
+                continue;
+            }
+
+            if (letters[4] != 'A') {
+                continue;
+            }
+
+            result += 1;
+        }
+    }
+
+    return result;
+}
+
 test "make_diagonals - example 2" {
     const allocator = std.testing.allocator;
     const input: []const []const u8 = &[_][]const u8{
@@ -381,6 +433,59 @@ pub fn find_xmases_in_matrix(allocator: std.mem.Allocator, matrix: []const []con
     for (reversed_diagonals_right) |str| {
         count += find_xmases_in_string(str);
     }
+
+    return count;
+}
+
+test "find_x_mases - example 2" {
+    const allocator = std.testing.allocator;
+    const input: []const []const u8 = &[_][]const u8{
+        "MMMSXXMASM",
+        "MSAMXMSMSA",
+        "AMXSXMAAMM",
+        "MSAMASMSMX",
+        "XMASAMXAMM",
+        "XXAMMXXAMA",
+        "SMSMSASXSS",
+        "SAXAMASAAA",
+        "MAMMMXMMMM",
+        "MXMXAXMASX",
+    };
+    const expected: u64 = 9;
+    const actual = try find_xmases(allocator, input);
+
+    try testing.expectEqualDeep(expected, actual);
+}
+
+pub fn find_xmases(allocator: std.mem.Allocator, matrix: []const []const u8) !u64 {
+    var count: u64 = 0;
+
+    // horizontal
+    count += try find_x_mases_in_matrix(allocator, matrix);
+
+    // horizontal written backward
+    const reversed = try reverse_rows(allocator, matrix);
+    defer {
+        for (reversed) |col| allocator.free(col);
+        allocator.free(reversed);
+    }
+    count += try find_x_mases_in_matrix(allocator, reversed);
+
+    // vertical
+    const swapped_columns = try make_columns(allocator, matrix);
+    defer {
+        for (swapped_columns) |col| allocator.free(col);
+        allocator.free(swapped_columns);
+    }
+    count += try find_x_mases_in_matrix(allocator, swapped_columns);
+
+    // vertical written backwards
+    const reversed_columns = try reverse_rows(allocator, swapped_columns);
+    defer {
+        for (reversed_columns) |col| allocator.free(col);
+        allocator.free(reversed_columns);
+    }
+    count += try find_x_mases_in_matrix(allocator, reversed_columns);
 
     return count;
 }
