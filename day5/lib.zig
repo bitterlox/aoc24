@@ -119,7 +119,7 @@ pub const Rules = struct {
 
     pub fn is_in_order(self: *Self, page_numbers: []const u64) !bool {
         for (page_numbers, 0..) |number, idx| {
-            std.debug.print("{d} ", .{number});
+            // std.debug.print("{d} ", .{number});
 
             if (self.map.get(number)) |map| {
                 const rest = page_numbers[idx + 1 ..];
@@ -129,12 +129,6 @@ pub const Rules = struct {
                     if (!other_should_be_after) return false;
                 }
             }
-
-            // 61 13 29 fails because the rule is keyed on 29 but since
-            // we check from a number until slice end it isn't caught since
-            // 29 is the last number; either run a search with a reversed slice
-            // or add the inverse relationship keyed on the second number
-            // this second approach causes a memory leak for some unknown reason
         }
 
         const reversed = try self.allocator.alloc(u64, page_numbers.len);
@@ -157,7 +151,7 @@ pub const Rules = struct {
                 }
             }
         }
-        std.debug.print("\n", .{});
+        // std.debug.print("\n", .{});
 
         return true;
     }

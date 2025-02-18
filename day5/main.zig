@@ -71,10 +71,14 @@ fn get_input(allocator: std.mem.Allocator) anyerror!Input {
     return Input.init(allocator, try ordering_rules.toOwnedSlice(), try update_numbers.toOwnedSlice());
 }
 
-fn count_already_in_order(rules: *lib.Rules, page_numbers: [][]u64) !u64 {
+fn result1(rules: *lib.Rules, page_numbers: [][]u64) !u64 {
     var count: u64 = 0;
     for (page_numbers) |line| {
-        if (try rules.is_in_order(line)) count += 1;
+        if (try rules.is_in_order(line)) {
+            const idx = @divTrunc(line.len - 1, 2);
+            // std.debug.print("{d}: {d}\n", .{ line, line[idx] });
+            count += line[idx];
+        }
     }
     return count;
 }
@@ -92,5 +96,5 @@ pub fn main() !void {
     var rules = try lib.Rules.init(allocator, input.page_ordering_rules);
     defer rules.deinit();
 
-    std.debug.print("already in order: {d}", .{try count_already_in_order(&rules, input.update_page_numbers)});
+    std.debug.print("already in order: {d}", .{try result1(&rules, input.update_page_numbers)});
 }
