@@ -59,36 +59,56 @@ pub const Rules = struct {
     allocator: std.mem.Allocator,
 
     const Self = @This();
-    const Ordering = struct { before: std.AutoHashMap(u64, void), after: std.AutoHashMap(u64, void) };
+    const Ordering = struct { before: *std.AutoHashMap(u64, void), after: *std.AutoHashMap(u64, void) };
+    const Set = std.AutoHashMap(u64, void);
 
     pub fn init(allocator: std.mem.Allocator, rules_slice: []const [2]u64) !Self {
         var map = std.AutoHashMap(u64, Ordering).init(allocator);
+        errdefer map.deinit();
+
+        // try map.ensureTotalCapacity(@intCast(rules_slice.len * 2));
 
         for (rules_slice) |arr| {
             const should_be_before = arr[0];
             const should_be_after = arr[1];
-            const tpl_before = map.getPtr(should_be_before);
-            // const tpl_after = map.getPtr(should_be_after);
 
-            if (tpl_before) |tuple| {
-                var before = tuple.*.before;
-                try before.putNoClobber(should_be_after, {});
+            // here is the reason for the memory leak: when we call putNoClobber
+            // at some point we need to grow the map, but doing so renders the pointer
+            // for before invalid
+            // https://github.com/ziglang/zig/issues/18198
+            if (map.get(should_be_before)) |set| {
+                try set.before.putNoClobber(should_be_after, {});
             } else {
-                var before_set = std.AutoHashMap(u64, void).init(allocator);
-                const after_set = std.AutoHashMap(u64, void).init(allocator);
+                const before_set: *Set = try allocator.create(Set);
+                before_set.* = Set.init(allocator);
+                const after_set: *Set = try allocator.create(Set);
+                after_set.* = Set.init(allocator);
+                errdefer {
+                    before_set.deinit();
+                    allocator.destroy(before_set);
+                    after_set.deinit();
+                    allocator.destroy(after_set);
+                }
                 try before_set.putNoClobber(should_be_after, {});
                 try map.putNoClobber(should_be_before, .{ .before = before_set, .after = after_set });
             }
 
-            // if (tpl_after) |tuple| {
-            //     var after = tuple.*.after;
-            //     try after.putNoClobber(should_be_before, {});
-            // } else {
-            //     const before_set = std.AutoHashMap(u64, void).init(allocator);
-            //     var after_set = std.AutoHashMap(u64, void).init(allocator);
-            //     try after_set.putNoClobber(should_be_before, {});
-            //     try map.putNoClobber(should_be_after, .{ .before = before_set, .after = after_set });
-            // }
+            if (map.get(should_be_after)) |set| {
+                try set.after.putNoClobber(should_be_before, {});
+            } else {
+                const before_set: *Set = try allocator.create(Set);
+                before_set.* = Set.init(allocator);
+                const after_set: *Set = try allocator.create(Set);
+                after_set.* = Set.init(allocator);
+                errdefer {
+                    before_set.deinit();
+                    allocator.destroy(before_set);
+                    after_set.deinit();
+                    allocator.destroy(after_set);
+                }
+                try after_set.putNoClobber(should_be_before, {});
+                try map.putNoClobber(should_be_after, .{ .before = before_set, .after = after_set });
+            }
         }
 
         return Self{
@@ -97,17 +117,16 @@ pub const Rules = struct {
         };
     }
 
-    pub fn is_in_order(self: *Self, page_numbers: []const u64) bool {
+    pub fn is_in_order(self: *Self, page_numbers: []const u64) !bool {
         for (page_numbers, 0..) |number, idx| {
             std.debug.print("{d} ", .{number});
-            const number_map = self.*.map.get(number);
 
-            if (number_map) |map| {
+            if (self.map.get(number)) |map| {
                 const rest = page_numbers[idx + 1 ..];
 
                 for (rest) |other| {
-                    const should_have_been_after = map.before.contains(other);
-                    if (!should_have_been_after) return false;
+                    const other_should_be_after = map.before.contains(other);
+                    if (!other_should_be_after) return false;
                 }
             }
 
@@ -117,6 +136,27 @@ pub const Rules = struct {
             // or add the inverse relationship keyed on the second number
             // this second approach causes a memory leak for some unknown reason
         }
+
+        const reversed = try self.allocator.alloc(u64, page_numbers.len);
+        defer self.allocator.free(reversed);
+        @memcpy(reversed, page_numbers);
+
+        std.mem.reverse(u64, reversed);
+
+        // std.debug.print("{d}\n", .{reversed});
+
+        for (reversed, 0..) |number, idx| {
+            // std.debug.print("{d}\n", .{number});
+            if (self.map.get(number)) |map| {
+                const rest = reversed[idx + 1 ..];
+
+                for (rest) |other| {
+                    const other_should_be_before = map.after.contains(other);
+                    // std.debug.print("{d} {any}\n", .{ other, other_should_be_before });
+                    if (!other_should_be_before) return false;
+                }
+            }
+        }
         std.debug.print("\n", .{});
 
         return true;
@@ -125,8 +165,10 @@ pub const Rules = struct {
     pub fn deinit(self: *Self) void {
         var it = self.map.iterator();
         while (it.next()) |entry| {
-            entry.value_ptr.*.before.deinit();
+            entry.value_ptr.before.deinit();
+            self.allocator.destroy(entry.value_ptr.before);
             entry.value_ptr.*.after.deinit();
+            self.allocator.destroy(entry.value_ptr.after);
         }
         self.map.deinit();
     }
