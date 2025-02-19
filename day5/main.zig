@@ -83,6 +83,33 @@ fn result1(rules: *lib.Rules, page_numbers: [][]u64) !u64 {
     return count;
 }
 
+fn result2(rules: *lib.Rules, page_numbers: [][]u64) !u64 {
+    var count: u64 = 0;
+
+    var sorted_page_numbers_list = std.ArrayList([]u64).init(rules.allocator);
+    defer sorted_page_numbers_list.deinit();
+
+    for (page_numbers) |line| {
+        if (!try rules.is_in_order(line)) {
+            const sorted = try rules.sort(line);
+            try sorted_page_numbers_list.append(sorted);
+        }
+    }
+
+    const sorted_page_numbers = try sorted_page_numbers_list.toOwnedSlice();
+    defer {
+        for (sorted_page_numbers) |slice| rules.allocator.free(slice);
+        rules.allocator.free(sorted_page_numbers);
+    }
+
+    for (sorted_page_numbers) |line| {
+        const idx = @divTrunc(line.len - 1, 2);
+        // std.debug.print("{d}: {d}\n", .{ line, line[idx] });
+        count += line[idx];
+    }
+    return count;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -96,5 +123,6 @@ pub fn main() !void {
     var rules = try lib.Rules.init(allocator, input.page_ordering_rules);
     defer rules.deinit();
 
-    std.debug.print("already in order: {d}", .{try result1(&rules, input.update_page_numbers)});
+    std.debug.print("already in order: {d}\n", .{try result1(&rules, input.update_page_numbers)});
+    std.debug.print("ordered: {d}\n", .{try result2(&rules, input.update_page_numbers)});
 }

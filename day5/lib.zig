@@ -32,7 +32,7 @@ const ordering_rules_for_tests: []const [2]u64 = &[_][2]u64{
     .{ 53, 13 },
 };
 
-test "Rules.init - example" {
+test "Rules.expectEqual - example" {
     var rules = try Rules.init(testing.allocator, ordering_rules_for_tests);
     defer rules.deinit();
 
@@ -51,6 +51,44 @@ test "Rules.init - example" {
     try testing.expectEqual(tests[3].expected, rules.is_in_order(tests[3].param));
     try testing.expectEqual(tests[4].expected, rules.is_in_order(tests[4].param));
     try testing.expectEqual(tests[5].expected, rules.is_in_order(tests[5].param));
+}
+
+test "Rules.sort - example" {
+    var rules = try Rules.init(testing.allocator, ordering_rules_for_tests);
+    defer rules.deinit();
+
+    const tests = [_]struct { param: []const u64, expected: []const u64 }{
+        .{ .param = &[_]u64{ 75, 47, 61, 53, 29 }, .expected = &[_]u64{ 75, 47, 61, 53, 29 } },
+        .{ .param = &[_]u64{ 97, 61, 53, 29, 13 }, .expected = &[_]u64{ 97, 61, 53, 29, 13 } },
+        .{ .param = &[_]u64{ 75, 29, 13 }, .expected = &[_]u64{ 75, 29, 13 } },
+        .{ .param = &[_]u64{ 75, 97, 47, 61, 53 }, .expected = &[_]u64{ 97, 75, 47, 61, 53 } },
+        .{ .param = &[_]u64{ 61, 13, 29 }, .expected = &[_]u64{ 61, 29, 13 } },
+        .{ .param = &[_]u64{ 97, 13, 75, 29, 47 }, .expected = &[_]u64{ 97, 75, 47, 29, 13 } },
+    };
+
+    const expected1 = try rules.sort(tests[0].param);
+    defer testing.allocator.free(expected1);
+    try testing.expectEqualSlices(u64, tests[0].expected, expected1);
+
+    const expected2 = try rules.sort(tests[1].param);
+    defer testing.allocator.free(expected2);
+    try testing.expectEqualSlices(u64, tests[1].expected, expected2);
+
+    const expected3 = try rules.sort(tests[2].param);
+    defer testing.allocator.free(expected3);
+    try testing.expectEqualSlices(u64, tests[2].expected, expected3);
+
+    const expected4 = try rules.sort(tests[3].param);
+    defer testing.allocator.free(expected4);
+    try testing.expectEqualSlices(u64, tests[3].expected, expected4);
+
+    const expected5 = try rules.sort(tests[4].param);
+    defer testing.allocator.free(expected5);
+    try testing.expectEqualSlices(u64, tests[4].expected, expected5);
+
+    const expected6 = try rules.sort(tests[5].param);
+    defer testing.allocator.free(expected6);
+    try testing.expectEqualSlices(u64, tests[5].expected, expected6);
 }
 
 /// caller takes ownership of memory
@@ -154,6 +192,27 @@ pub const Rules = struct {
         // std.debug.print("\n", .{});
 
         return true;
+    }
+
+    /// caller takes ownership of result
+    pub fn sort(self: *Self, page_numbers: []const u64) ![]u64 {
+        const SortScope = struct { map: std.AutoHashMap(u64, Ordering) };
+
+        const result = try self.allocator.alloc(u64, page_numbers.len);
+        @memcpy(result, page_numbers);
+
+        const sortFn = struct {
+            fn sort(scope: SortScope, lhs: u64, rhs: u64) bool {
+                const lhs_map = scope.map.get(lhs);
+                if (lhs_map) |m| {
+                    return m.before.contains(rhs);
+                } else return false;
+            }
+        }.sort;
+
+        std.mem.sort(u64, result, SortScope{ .map = self.map }, sortFn);
+
+        return result;
     }
 
     pub fn deinit(self: *Self) void {
