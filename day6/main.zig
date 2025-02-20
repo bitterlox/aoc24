@@ -2,7 +2,7 @@ const std = @import("std");
 const lib = @import("lib.zig");
 
 /// Caller takes ownership of the result
-fn get_input(allocator: std.mem.Allocator) anyerror![]u8 {
+fn get_input(allocator: std.mem.Allocator) anyerror![][]u8 {
     const fileContent = allocator.alloc(u8, 1024 * 16) catch |err| return err;
     defer allocator.free(fileContent);
 
@@ -12,14 +12,18 @@ fn get_input(allocator: std.mem.Allocator) anyerror![]u8 {
     var buf_reader = std.io.bufferedReader(file.reader());
     var in_stream = buf_reader.reader();
 
-    var map = std.ArrayList(u8).init(allocator);
-    defer map.deinit();
+    var lines = std.ArrayList([]u8).init(allocator);
+    defer lines.deinit();
 
     while (try in_stream.readUntilDelimiterOrEof(fileContent, '\n')) |line| {
-        try map.appendSlice(line);
+        var line_list = std.ArrayList(u8).init(allocator);
+        defer line_list.deinit();
+
+        try line_list.appendSlice(line);
+        try lines.append(try line_list.toOwnedSlice());
     }
 
-    return try map.toOwnedSlice();
+    return try lines.toOwnedSlice();
 }
 
 pub fn main() !void {
@@ -27,7 +31,11 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const input = try get_input(allocator);
-    defer allocator.free(input);
+    defer {
+        for (input) |line| allocator.free(line);
+        allocator.free(input);
+    }
 
-    std.debug.print("input: {s}\n", .{input});
+    std.debug.print("count: {d}\n", .{try lib.walkGuard(input)});
+    // for (input) |line| { }
 }
