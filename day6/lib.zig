@@ -75,7 +75,90 @@ fn findGuard(input: []const []const u8) MapOpError!GuardPosition {
     return MapOpError.NoGuardError;
 }
 
-test calculateNextGuardPosition {
+fn checkCoordsOutOfBounds(input: []const []const u8, maybe_y: ?usize, maybe_x: ?usize) MapOpError!void {
+    if (maybe_y) |y| {
+        const max_y = input.len;
+        if (y >= max_y) return MapOpError.OutOfBoundsError;
+    }
+
+    if (maybe_x) |x| {
+        const max_x = input[0].len;
+        if (x >= max_x) return MapOpError.OutOfBoundsError;
+    }
+}
+
+fn getNeighboringCoords(input: []const []const u8, y: usize, x: usize, direction: Direction) MapOpError!GuardPosition {
+    return switch (direction) {
+        .Up => blk: {
+            const new_y = y - 1;
+            try checkCoordsOutOfBounds(input, new_y, null);
+            break :blk .{ .y = new_y, .x = x };
+        },
+        .Down => blk: {
+            const new_y = y + 1;
+            try checkCoordsOutOfBounds(input, new_y, null);
+            break :blk .{ .y = new_y, .x = x };
+        },
+        .Left => blk: {
+            const new_x = x - 1;
+            try checkCoordsOutOfBounds(input, null, new_x);
+            break :blk .{ .y = y, .x = new_x };
+        },
+        .Right => blk: {
+            const new_x = x + 1;
+            try checkCoordsOutOfBounds(input, null, new_x);
+            break :blk .{ .y = y, .x = new_x };
+        },
+    };
+}
+
+fn already_visited(char: u8) bool {
+    return switch (char) {
+        '|', '-', '+' => true,
+        else => false,
+    };
+}
+
+fn is_obstructed(char: u8) bool {
+    return switch (char) {
+        '#' => true,
+        else => false,
+    };
+}
+
+fn printMap(map: []const []const u8) void {
+    for (map) |line| {
+        std.debug.print("{s}\n", .{line});
+    }
+    std.debug.print("\n", .{});
+}
+
+test "test - advanceCursor 1" {
+    var param = try testing.allocator.alloc([]u8, 10);
+    param[0] = try testing.allocator.dupe(u8, "....#.....");
+    param[1] = try testing.allocator.dupe(u8, ".........#");
+    param[2] = try testing.allocator.dupe(u8, "..........");
+    param[3] = try testing.allocator.dupe(u8, "..#.......");
+    param[4] = try testing.allocator.dupe(u8, ".......#..");
+    param[5] = try testing.allocator.dupe(u8, "..........");
+    param[6] = try testing.allocator.dupe(u8, ".#..^.....");
+    param[7] = try testing.allocator.dupe(u8, "........#.");
+    param[8] = try testing.allocator.dupe(u8, "#.........");
+    param[9] = try testing.allocator.dupe(u8, "......#...");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try advanceCursor(param, GuardPosition{ .y = 6, .x = 4 }, GuardPosition{ .y = 5, .x = 4 }, false);
+
+    try testing.expectEqual(MoveResult.regular_cell, actual);
+    try testing.expectEqual('^', param[5][4]);
+    try testing.expectEqual('|', param[6][4]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "test - advanceCursor 2" {
     var param = try testing.allocator.alloc([]u8, 10);
     param[0] = try testing.allocator.dupe(u8, "....#.....");
     param[1] = try testing.allocator.dupe(u8, "....^....#");
@@ -92,69 +175,102 @@ test calculateNextGuardPosition {
         testing.allocator.free(param);
     }
 
-    const maybe_new_pos_1 = calculateNextGuardPosition(param, .Up);
-    try testing.expectError(MapOpError.FoundObstacleError, maybe_new_pos_1);
+    const actual = try advanceCursor(param, GuardPosition{ .y = 1, .x = 4 }, GuardPosition{ .y = 0, .x = 4 }, false);
+
+    errdefer printMap(param);
+
+    try testing.expectEqual(MoveResult.obstruction, actual);
+    try testing.expectEqual('+', param[1][4]);
+    try testing.expectEqual('>', param[1][5]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
-
-    const new_pos_2 = try calculateNextGuardPosition(param, .Right);
-    try testing.expectEqual(GuardPosition{ .x = 5, .y = 1 }, new_pos_2);
-
-    const new_pos_4 = try calculateNextGuardPosition(param, .Down);
-    try testing.expectEqual(GuardPosition{ .x = 4, .y = 2 }, new_pos_4);
-
-    const new_pos_5 = try calculateNextGuardPosition(param, .Left);
-    try testing.expectEqual(GuardPosition{ .x = 3, .y = 1 }, new_pos_5);
 }
 
-/// result is new position of guard .{x, y}
-fn calculateNextGuardPosition(input: []const []const u8, direction: Direction) MapOpError!GuardPosition {
-    const prev_pos = try findGuard(input);
-    const prev_y = prev_pos.y;
-    const prev_x = prev_pos.x;
-
-    const max_x = input[0].len;
-    const max_y = input.len;
-
-    const new_pos: GuardPosition = switch (direction) {
-        .Up => blk: {
-            const new_y = prev_y - 1;
-            if (new_y >= max_y) return MapOpError.OutOfBoundsError;
-            break :blk .{ .y = new_y, .x = prev_x };
-        },
-        .Down => blk: {
-            const new_y = prev_y + 1;
-            if (new_y >= max_y) return MapOpError.OutOfBoundsError;
-            break :blk .{ .y = new_y, .x = prev_x };
-        },
-        .Left => blk: {
-            const new_x = prev_x - 1;
-            if (new_x >= max_x) return MapOpError.OutOfBoundsError;
-            break :blk .{ .y = prev_y, .x = new_x };
-        },
-        .Right => blk: {
-            const new_x = prev_x + 1;
-            if (new_x >= max_x) return MapOpError.OutOfBoundsError;
-            break :blk .{ .y = prev_y, .x = new_x };
-        },
-    };
-
-    if (input[new_pos.y][new_pos.x] == '#') return MapOpError.FoundObstacleError;
-
-    return new_pos;
-}
-
-fn already_visited(char: u8) bool {
-    return switch (char) {
-        '|', '-', '+' => true,
-        else => false,
-    };
-}
-
-fn printMap(map: [][]u8) void {
-    for (map) |line| {
-        std.debug.print("{s}\n", .{line});
+test "test - advanceCursor 3" {
+    var param = try testing.allocator.alloc([]u8, 10);
+    param[0] = try testing.allocator.dupe(u8, "....#.....");
+    param[1] = try testing.allocator.dupe(u8, "....+---+#");
+    param[2] = try testing.allocator.dupe(u8, "....|...|.");
+    param[3] = try testing.allocator.dupe(u8, "..#.|...|.");
+    param[4] = try testing.allocator.dupe(u8, "....|..#|.");
+    param[5] = try testing.allocator.dupe(u8, "....|...|.");
+    param[6] = try testing.allocator.dupe(u8, ".#..|<--+.");
+    param[7] = try testing.allocator.dupe(u8, "........#.");
+    param[8] = try testing.allocator.dupe(u8, "#.........");
+    param[9] = try testing.allocator.dupe(u8, "......#...");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
     }
-    std.debug.print("\n", .{});
+
+    const actual = try advanceCursor(param, GuardPosition{ .y = 6, .x = 5 }, GuardPosition{ .y = 6, .x = 4 }, false);
+
+    errdefer printMap(param);
+
+    try testing.expectEqual(MoveResult.already_visited, actual);
+    try testing.expectEqual('<', param[6][4]);
+    try testing.expectEqual('-', param[6][5]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "test - advanceCursor 4" {
+    var param = try testing.allocator.alloc([]u8, 10);
+    param[0] = try testing.allocator.dupe(u8, "....#.....");
+    param[1] = try testing.allocator.dupe(u8, "....+---+#");
+    param[2] = try testing.allocator.dupe(u8, "....|...|.");
+    param[3] = try testing.allocator.dupe(u8, "..#.|...|.");
+    param[4] = try testing.allocator.dupe(u8, "....|..#|.");
+    param[5] = try testing.allocator.dupe(u8, "....|...|.");
+    param[6] = try testing.allocator.dupe(u8, ".#..<---+.");
+    param[7] = try testing.allocator.dupe(u8, "........#.");
+    param[8] = try testing.allocator.dupe(u8, "#.........");
+    param[9] = try testing.allocator.dupe(u8, "......#...");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try advanceCursor(param, GuardPosition{ .y = 6, .x = 4 }, GuardPosition{ .y = 6, .x = 3 }, true);
+
+    errdefer printMap(param);
+
+    try testing.expectEqual(MoveResult.regular_cell, actual);
+    try testing.expectEqual('+', param[6][4]);
+    try testing.expectEqual('<', param[6][3]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+const MoveResult = enum { already_visited, obstruction, regular_cell };
+
+/// result is number of positions visited;
+// cases:
+// - 1 we want to move to an unvisited, unobstructed cell
+// - 2 we want to move to a cell with an obstruction
+// - 3 we want to move to an already visited cell
+pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_position: GuardPosition, current_pos_overlapped: bool) MapOpError!MoveResult {
+    const current_char = &input[current_position.y][current_position.x];
+    const next_char = &input[next_position.y][next_position.x];
+
+    var result = MoveResult.regular_cell;
+
+    // printMap(input);
+
+    var current_direction = Direction.from_char(current_char.*).?;
+
+    if (is_obstructed(next_char.*)) {
+        current_char.* = '+';
+
+        const new_direction = current_direction.turn_right();
+        const coords_to_the_right = try getNeighboringCoords(input, current_position.y, current_position.x, new_direction);
+        const char_to_the_right = &input[coords_to_the_right.y][coords_to_the_right.x];
+        char_to_the_right.* = new_direction.to_char();
+        return MoveResult.obstruction;
+    } else {
+        if (next_char.* == '|' or next_char.* == '-') result = MoveResult.already_visited;
+
+        current_char.* = if (current_pos_overlapped) '+' else if (current_direction == .Up or current_direction == .Down) '|' else '-';
+        next_char.* = current_direction.to_char();
+    }
+    return result;
 }
 
 test walkGuard {
@@ -180,71 +296,29 @@ test walkGuard {
 
 /// result is number of positions visited;
 pub fn walkGuard(input: [][]u8) MapOpError!u64 {
-    // starting at 1 to include spot guard is standing on
+    // adding 1 for the first position
     var positions_visited: u64 = 1;
+    var prev_iteration_already_visited = false;
 
-    var guard_position = try findGuard(input);
-    var direction = Direction.from_char(input[guard_position.y][guard_position.x]) orelse @panic("found unexpected character");
+    loop: while (true) {
+        const prev_pos = try findGuard(input);
+        const direction = Direction.from_char(input[prev_pos.y][prev_pos.x]).?;
+        const prev_y = prev_pos.y;
+        const prev_x = prev_pos.x;
 
-    var current_char: *u8 = undefined;
-    var next_char: *u8 = undefined;
-    var curr_char_already_visited = false;
+        const new_pos = getNeighboringCoords(input, prev_y, prev_x, direction) catch |err| switch (err) {
+            MapOpError.OutOfBoundsError => break :loop,
+            else => return err,
+        };
 
-    loop: while (true) : ({
-        curr_char_already_visited = already_visited(next_char.*);
-        next_char.* = direction.to_char();
-        // printMap(input);
-    }) {
-        const maybe_move_result = calculateNextGuardPosition(input, direction);
+        const move_result = try advanceCursor(input, prev_pos, new_pos, prev_iteration_already_visited);
 
-        current_char = &input[guard_position.y][guard_position.x];
+        if (prev_iteration_already_visited) prev_iteration_already_visited = false;
 
-        if (maybe_move_result) |move_result| {
-            next_char = &input[move_result.y][move_result.x];
-
-            // draw map
-            current_char.* = blk: {
-                if (curr_char_already_visited) {
-                    break :blk '+';
-                } else {
-                    break :blk switch (direction) {
-                        .Up, .Down => '|',
-                        .Left, .Right => '-',
-                    };
-                }
-            };
-            guard_position = move_result;
-
-            if (!already_visited(next_char.*)) {
-                positions_visited += 1;
-            }
-
-            continue;
-        } else |err| {
-            switch (err) {
-                // in the end the map is left with the guard char still in place
-                // and no X, but count is accurate
-                MapOpError.FoundObstacleError => {
-
-                    // this codifies the action of "turning right"
-                    direction = switch (direction) {
-                        .Up => .Right,
-                        .Right => .Down,
-                        .Down => .Left,
-                        .Left => .Up,
-                    };
-
-                    const maybe_another_move_result = calculateNextGuardPosition(input, direction);
-                    if (maybe_another_move_result) |good_result| {
-                        current_char.* = '+';
-                        next_char = &input[good_result.y][good_result.x];
-                        guard_position = good_result;
-                        positions_visited += 1;
-                    } else |other_err| return other_err;
-                },
-                MapOpError.OutOfBoundsError => break :loop,
-                else => return err,
-            }
+        switch (move_result) {
+            MoveResult.already_visited => prev_iteration_already_visited = true,
+            MoveResult.obstruction => positions_visited += 1,
+            MoveResult.regular_cell => positions_visited += 1,
         }
     }
 
@@ -268,20 +342,41 @@ test findTurnToTheRight {
         testing.allocator.free(param);
     }
 
-    try testing.expectEqual(true, try findTurnToTheRight(param));
+    try testing.expectEqual(true, try findTurnToTheRight(testing.allocator, param));
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-pub fn findTurnToTheRight(input: [][]u8) MapOpError!bool {
+pub fn findTurnToTheRight(allocator: std.mem.Allocator, input: []const []const u8) !bool {
+    var input_copy = try allocator.alloc([]u8, input.len);
+    defer {
+        for (input_copy) |sl| allocator.free(sl);
+        allocator.free(input_copy);
+    }
+
+    for (input, 0..) |sl, idx| {
+        input_copy[idx] = try allocator.dupe(u8, sl);
+    }
+
     // need to copy the input in;
     // extract a function from the walk one to advance the cursor
-    const current_pos = try findGuard(input);
-    const current_char = input[current_pos.y][current_pos.x];
-    const direction = Direction.from_char(current_char) orelse @panic("no direction");
+    var current_pos = try findGuard(input);
+
+    const current_char: *u8 = &input_copy[current_pos.y][current_pos.x];
+    const direction = Direction.from_char(current_char.*).?;
+
     const new_direction = direction.turn_right();
-    while (calculateNextGuardPosition(input, new_direction)) |_| {} else |err| {
+    current_char.* = new_direction.to_char();
+
+    var next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, new_direction);
+
+    while (advanceCursor(input_copy, current_pos, next_pos, false)) |move_result| : ({
+        current_pos = next_pos;
+        next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, new_direction);
+        // printMap(input_copy);
+    }) {
+        if (move_result == MoveResult.obstruction) return true;
+    } else |err| {
         switch (err) {
-            MapOpError.FoundObstacleError => return true,
             MapOpError.OutOfBoundsError => return false,
             else => return err,
         }
@@ -305,77 +400,44 @@ test findLoops {
         testing.allocator.free(param);
     }
 
-    try testing.expectEqual(41, try findLoops(param));
+    try testing.expectEqual(6, try findLoops(testing.allocator, param));
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-/// result is number of loops visited;
-// algo is as follows: every time we re-rencounter a cell we've stepped on, we
-// copy the map and run a  line straigh ahead to the right; if we find a '+'
-// it is a position where a loop could be successfully created
-pub fn findLoops(input: [][]u8) MapOpError!u64 {
-    // starting at 1 to include spot guard is standing on
-    var positions_visited: u64 = 1;
+// /// result is number of loops visited;
+// // algo is as follows: every time we re-rencounter a cell we've stepped on, we
+// // copy the map and run a  line straigh ahead to the right; if we find a '+'
+// // it is a position where a loop could be successfully created
+pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8) !u64 {
+    // adding 1 for the first position
+    var cycles: u64 = 1;
+    var prev_iteration_already_visited = false;
 
-    var guard_position = try findGuard(input);
-    var direction = Direction.from_char(input[guard_position.y][guard_position.x]) orelse @panic("found unexpected character");
+    const prev_pos = try findGuard(input);
+    loop: while (true) : (printMap(input)) {
+        const direction = Direction.from_char(input[prev_pos.y][prev_pos.x]).?;
+        const prev_y = prev_pos.y;
+        const prev_x = prev_pos.x;
 
-    var current_char: *u8 = undefined;
-    var next_char: *u8 = undefined;
-    var curr_char_already_visited = false;
+        const new_pos = getNeighboringCoords(input, prev_y, prev_x, direction) catch |err| switch (err) {
+            MapOpError.OutOfBoundsError => break :loop,
+            else => return err,
+        };
 
-    loop: while (true) : ({
-        curr_char_already_visited = already_visited(next_char.*);
-        next_char.* = direction.to_char();
-        // printMap(input);
-    }) {
-        const maybe_move_result = calculateNextGuardPosition(input, direction);
+        if (prev_iteration_already_visited) {
+            if (try findTurnToTheRight(allocator, input)) cycles += 1;
+        }
 
-        current_char = &input[guard_position.y][guard_position.x];
+        const move_result = try advanceCursor(input, prev_pos, new_pos, prev_iteration_already_visited);
 
-        if (maybe_move_result) |move_result| {
-            next_char = &input[move_result.y][move_result.x];
+        if (prev_iteration_already_visited) prev_iteration_already_visited = false;
 
-            // draw map
-            current_char.* = blk: {
-                if (curr_char_already_visited) {
-                    break :blk '+';
-                } else {
-                    break :blk switch (direction) {
-                        .Up, .Down => '|',
-                        .Left, .Right => '-',
-                    };
-                }
-            };
-            guard_position = move_result;
-
-            if (!already_visited(next_char.*)) {
-                positions_visited += 1;
-            }
-
-            continue;
-        } else |err| {
-            switch (err) {
-                // in the end the map is left with the guard char still in place
-                // and no X, but count is accurate
-                MapOpError.FoundObstacleError => {
-
-                    // this codifies the action of "turning right"
-                    direction = direction.turn_right();
-
-                    const maybe_another_move_result = calculateNextGuardPosition(input, direction);
-                    if (maybe_another_move_result) |good_result| {
-                        current_char.* = '+';
-                        next_char = &input[good_result.y][good_result.x];
-                        guard_position = good_result;
-                        positions_visited += 1;
-                    } else |other_err| return other_err;
-                },
-                MapOpError.OutOfBoundsError => break :loop,
-                else => return err,
-            }
+        switch (move_result) {
+            MoveResult.already_visited => {},
+            MoveResult.obstruction => {},
+            MoveResult.regular_cell => {},
         }
     }
 
-    return positions_visited;
+    return cycles;
 }
