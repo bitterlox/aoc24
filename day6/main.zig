@@ -26,16 +26,6 @@ fn get_input(allocator: std.mem.Allocator) anyerror![][]u8 {
     return try lines.toOwnedSlice();
 }
 
-/// caller takes ownership of memory
-fn dupeInput(allocator: std.mem.Allocator, input_to_copy: []const []const u8) ![][]u8 {
-    const result = try allocator.alloc([]u8, input_to_copy.len);
-    for (input_to_copy, 0..) |sl, idx| {
-        result[idx] = try allocator.dupe(u8, sl);
-    }
-
-    return result;
-}
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -49,13 +39,14 @@ pub fn main() !void {
         allocator.free(input);
     }
 
-    const input_copy = try dupeInput(allocator, input);
+    const input_copy = try lib.dupeInput(allocator, input);
     defer {
         for (input_copy) |sl| allocator.free(sl);
         allocator.free(input_copy);
     }
 
     std.debug.print("count: {d}\n", .{try lib.walkGuard(input, &cache)});
+    std.debug.print("cache count: {d}\n", .{cache.count()});
     std.debug.print("loops: {d}\n", .{try lib.findLoops(allocator, input_copy, &cache)});
     // for (input) |line| { }
 }

@@ -5,6 +5,16 @@ test "test" {}
 
 fn parseInput() void {}
 
+/// caller takes ownership of memory
+fn dupeInput(allocator: std.mem.Allocator, input_to_copy: []const []const u8) ![][]u8 {
+    const result = try allocator.alloc([]u8, input_to_copy.len);
+    for (input_to_copy, 0..) |sl, idx| {
+        result[idx] = try allocator.dupe(u8, sl);
+    }
+
+    return result;
+}
+
 test findGuard {
     const param: []const []const u8 = &[_][]const u8{
         "....#.....",
@@ -463,17 +473,7 @@ test "findLoop - cache" {
 
 pub const Cache = std.AutoHashMap(struct { GuardPosition, Direction }, void);
 
-pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input_to_copy: []const []const u8) !bool {
-    var input = try allocator.alloc([]u8, input_to_copy.len);
-    defer {
-        for (input) |sl| allocator.free(sl);
-        allocator.free(input);
-    }
-
-    for (input_to_copy, 0..) |sl, idx| {
-        input[idx] = try allocator.dupe(u8, sl);
-    }
-
+pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input: []const []const u8) !bool {
     const inital_pos = try findGuard(input);
     var current_pos = inital_pos;
 
@@ -503,8 +503,8 @@ pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input_
             if (cache.contains(.{ current_pos, direction })) return true;
         }
 
-        const gop_result = try inner_cache.getOrPut(.{ current_pos, direction });
-        if (gop_result.found_existing) return true;
+        // const gop_result = try inner_cache.getOrPut(.{ current_pos, direction });
+        // if (gop_result.found_existing) return true;
 
         const prev_y = current_pos.y;
         const prev_x = current_pos.x;
@@ -516,7 +516,7 @@ pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input_
 
         // if (move_result == MoveResult.obstruction_already_visited) return true;
 
-        // // printMap(input);
+        printMap(input);
         if (current_pos.eql(inital_pos)) {
             return true;
         }
@@ -617,8 +617,12 @@ pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, cache: ?*Cache) !u
             else => return err,
         };
 
-        const next_char = try next_pos.get_char_from_input(input);
-        if (!next_pos.eql(inital_pos) and next_char.* != '#') {
+        // const next_char = try next_pos.get_char_from_input(input);
+        if (!next_pos.eql(inital_pos)) {
+
+            // TODO: for each direction that isn't the direction we're coming from
+            // dupe input, add obstacle in that direction, check for loops
+
             // std.debug.print("next char: {s}\n", .{@tagName(direction)});
             // std.debug.print("next char: {s}\n", .{[_]u8{next_char.*}});
             if (try findLoop(allocator, cache, input)) {
@@ -642,4 +646,42 @@ pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, cache: ?*Cache) !u
     }
 
     return cycles;
+}
+
+test "addObstruction - 1" {
+    var param = try testing.allocator.alloc([]u8, 10);
+    param[0] = try testing.allocator.dupe(u8, "....#.....");
+    param[1] = try testing.allocator.dupe(u8, ".........#");
+    param[2] = try testing.allocator.dupe(u8, "..........");
+    param[3] = try testing.allocator.dupe(u8, "..#.......");
+    param[4] = try testing.allocator.dupe(u8, ".......#..");
+    param[5] = try testing.allocator.dupe(u8, "..........");
+    param[6] = try testing.allocator.dupe(u8, ".#..^.....");
+    param[7] = try testing.allocator.dupe(u8, "........#.");
+    param[8] = try testing.allocator.dupe(u8, "#.........");
+    param[9] = try testing.allocator.dupe(u8, "......#...");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    try addObstruction(param, .Left);
+
+    printMap(param);
+
+    try testing.expectEqual('#', param[6][3]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+// /// result is number of loops visited;
+// // algo is as follows: every time we re-rencounter a cell we've stepped on, we
+// // copy the map and run a  line straigh ahead to the right; if we find a '+'
+// // it is a position where a loop could be successfully created
+pub fn addObstruction(input: [][]u8, direction: Direction) !void {
+    const initial_pos = try findGuard(input);
+    const new_obstacle_pos = try getNeighboringCoords(input, initial_pos.y, initial_pos.x, direction);
+
+    const mut_char = try new_obstacle_pos.get_mut_char_from_input(input);
+
+    mut_char.* = '#';
 }
