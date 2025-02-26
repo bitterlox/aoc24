@@ -37,5 +37,6 @@ pub fn main() !void {
     }
 
     std.debug.print("count: {d}\n", .{try lib.walkGuard(input)});
+    std.debug.print("loops: {d}\n", .{try lib.findLoops(allocator, input)});
     // for (input) |line| { }
 }

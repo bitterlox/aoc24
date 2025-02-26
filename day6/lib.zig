@@ -24,7 +24,21 @@ test findGuard {
 
 const MapOpError = error{ FoundObstacleError, OutOfBoundsError, NoGuardError };
 
-const GuardPosition = struct { x: usize, y: usize };
+const GuardPosition = struct {
+    x: usize,
+    y: usize,
+
+    const Self = @This();
+
+    fn get_char_from_input(self: Self, input: []const []const u8) !*const u8 {
+        try checkCoordsOutOfBounds(input, self.y, self.x);
+        return &input[self.y][self.x];
+    }
+
+    fn eql(self: Self, other: Self) bool {
+        return self.x == other.x and self.y == other.y;
+    }
+};
 
 const Direction = union(enum) {
     Up,
@@ -90,6 +104,7 @@ fn checkCoordsOutOfBounds(input: []const []const u8, maybe_y: ?usize, maybe_x: ?
 fn getNeighboringCoords(input: []const []const u8, y: usize, x: usize, direction: Direction) MapOpError!GuardPosition {
     return switch (direction) {
         .Up => blk: {
+            if (y == 0) return MapOpError.OutOfBoundsError;
             const new_y = y - 1;
             try checkCoordsOutOfBounds(input, new_y, null);
             break :blk .{ .y = new_y, .x = x };
@@ -100,6 +115,7 @@ fn getNeighboringCoords(input: []const []const u8, y: usize, x: usize, direction
             break :blk .{ .y = new_y, .x = x };
         },
         .Left => blk: {
+            if (x == 0) return MapOpError.OutOfBoundsError;
             const new_x = x - 1;
             try checkCoordsOutOfBounds(input, null, new_x);
             break :blk .{ .y = y, .x = new_x };
@@ -239,7 +255,7 @@ test "test - advanceCursor 4" {
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-const MoveResult = enum { already_visited, obstruction, regular_cell };
+const MoveResult = enum { already_visited, obstruction, obstruction_already_visited, regular_cell };
 
 /// result is number of positions visited;
 // cases:
@@ -253,17 +269,24 @@ pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_positi
     var result = MoveResult.regular_cell;
 
     // printMap(input);
+    // std.debug.print("currentchar: {s}\n", .{[_]u8{ current_char.*, ' ', next_char.* }});
 
     var current_direction = Direction.from_char(current_char.*).?;
 
     if (is_obstructed(next_char.*)) {
         current_char.* = '+';
 
+        result = MoveResult.obstruction;
+
         const new_direction = current_direction.turn_right();
         const coords_to_the_right = try getNeighboringCoords(input, current_position.y, current_position.x, new_direction);
         const char_to_the_right = &input[coords_to_the_right.y][coords_to_the_right.x];
+
+        if (char_to_the_right.* == '|' or char_to_the_right.* == '-') result = MoveResult.obstruction_already_visited;
+
         char_to_the_right.* = new_direction.to_char();
-        return MoveResult.obstruction;
+
+        return result;
     } else {
         if (next_char.* == '|' or next_char.* == '-') result = MoveResult.already_visited;
 
@@ -317,15 +340,18 @@ pub fn walkGuard(input: [][]u8) MapOpError!u64 {
 
         switch (move_result) {
             MoveResult.already_visited => prev_iteration_already_visited = true,
+            MoveResult.obstruction_already_visited => {},
             MoveResult.obstruction => positions_visited += 1,
             MoveResult.regular_cell => positions_visited += 1,
         }
     }
 
+    // printMap(input);
+
     return positions_visited;
 }
 
-test findTurnToTheRight {
+test "findLoop - 1" {
     var param = try testing.allocator.alloc([]u8, 10);
     param[0] = try testing.allocator.dupe(u8, "....#.....");
     param[1] = try testing.allocator.dupe(u8, "....+---+#");
@@ -342,39 +368,52 @@ test findTurnToTheRight {
         testing.allocator.free(param);
     }
 
-    try testing.expectEqual(true, try findTurnToTheRight(testing.allocator, param));
+    try testing.expectEqual(true, try findLoop(testing.allocator, param));
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-pub fn findTurnToTheRight(allocator: std.mem.Allocator, input: []const []const u8) !bool {
-    var input_copy = try allocator.alloc([]u8, input.len);
+pub fn findLoop(allocator: std.mem.Allocator, input_to_copy: []const []const u8) !bool {
+    var input = try allocator.alloc([]u8, input_to_copy.len);
     defer {
-        for (input_copy) |sl| allocator.free(sl);
-        allocator.free(input_copy);
+        for (input) |sl| allocator.free(sl);
+        allocator.free(input);
     }
 
-    for (input, 0..) |sl, idx| {
-        input_copy[idx] = try allocator.dupe(u8, sl);
+    for (input_to_copy, 0..) |sl, idx| {
+        input[idx] = try allocator.dupe(u8, sl);
     }
 
-    // need to copy the input in;
-    // extract a function from the walk one to advance the cursor
-    var current_pos = try findGuard(input);
+    const inital_pos = try findGuard(input);
+    var current_pos = inital_pos;
 
-    const current_char: *u8 = &input_copy[current_pos.y][current_pos.x];
-    const direction = Direction.from_char(current_char.*).?;
-
-    const new_direction = direction.turn_right();
+    const current_char: *u8 = &input[current_pos.y][current_pos.x];
+    const new_direction = Direction.from_char(current_char.*).?.turn_right();
     current_char.* = new_direction.to_char();
 
     var next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, new_direction);
 
-    while (advanceCursor(input_copy, current_pos, next_pos, false)) |move_result| : ({
-        current_pos = next_pos;
-        next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, new_direction);
-        // printMap(input_copy);
-    }) {
-        if (move_result == MoveResult.obstruction) return true;
+    // std.debug.print("currentpos {any}\n", .{current_pos});
+    // std.debug.print("nextpos {any}\n", .{next_pos});
+
+    while (advanceCursor(input, current_pos, next_pos, false)) |_| {
+        // std.debug.print("currentpos {any}\n", .{current_pos});
+        // std.debug.print("nextpos {any}\n", .{next_pos});
+        // std.debug.print("dir {s}\n", .{@tagName(new_direction)});
+
+        current_pos = try findGuard(input);
+        const direction = Direction.from_char(input[current_pos.y][current_pos.x]).?;
+        const prev_y = current_pos.y;
+        const prev_x = current_pos.x;
+
+        next_pos = getNeighboringCoords(input, prev_y, prev_x, direction) catch |err| switch (err) {
+            MapOpError.OutOfBoundsError => return false,
+            else => return err,
+        };
+
+        // printMap(input);
+        if (current_pos.eql(inital_pos)) {
+            return true;
+        }
     } else |err| {
         switch (err) {
             MapOpError.OutOfBoundsError => return false,
@@ -409,12 +448,15 @@ test findLoops {
 // // copy the map and run a  line straigh ahead to the right; if we find a '+'
 // // it is a position where a loop could be successfully created
 pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8) !u64 {
-    // adding 1 for the first position
-    var cycles: u64 = 1;
+    var cycles: u64 = 0;
     var prev_iteration_already_visited = false;
 
-    const prev_pos = try findGuard(input);
-    loop: while (true) : (printMap(input)) {
+    const inital_pos = try findGuard(input);
+    var prev_pos = inital_pos;
+    loop: while (true) {
+        // std.debug.print("visited: {any}\n", .{prev_iteration_already_visited});
+
+        prev_pos = try findGuard(input);
         const direction = Direction.from_char(input[prev_pos.y][prev_pos.x]).?;
         const prev_y = prev_pos.y;
         const prev_x = prev_pos.x;
@@ -424,18 +466,27 @@ pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8) !u64 {
             else => return err,
         };
 
-        if (prev_iteration_already_visited) {
-            if (try findTurnToTheRight(allocator, input)) cycles += 1;
+        const next_char = try new_pos.get_char_from_input(input);
+        if (next_char.* != '#') {
+            // std.debug.print("next char: {s}\n", .{@tagName(direction)});
+            // std.debug.print("next char: {s}\n", .{[_]u8{next_char.*}});
+            if (try findLoop(allocator, input)) {
+                printMap(input);
+                cycles += 1;
+            }
         }
 
-        const move_result = try advanceCursor(input, prev_pos, new_pos, prev_iteration_already_visited);
+        // if (prev_iteration_already_visited) {
+        //     printMap(input);
+        //     prev_iteration_already_visited = false;
+        // }
 
-        if (prev_iteration_already_visited) prev_iteration_already_visited = false;
+        const move_result = try advanceCursor(input, prev_pos, new_pos, prev_iteration_already_visited);
+        prev_iteration_already_visited = false;
 
         switch (move_result) {
-            MoveResult.already_visited => {},
-            MoveResult.obstruction => {},
-            MoveResult.regular_cell => {},
+            MoveResult.already_visited => prev_iteration_already_visited = true,
+            else => {},
         }
     }
 
