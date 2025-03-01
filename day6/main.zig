@@ -1,5 +1,6 @@
 const std = @import("std");
 const lib = @import("lib.zig");
+const lib2 = @import("lib2.zig");
 
 /// Caller takes ownership of the result
 fn get_input(allocator: std.mem.Allocator) anyerror![][]u8 {
@@ -30,23 +31,19 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var cache = lib.Cache.init(allocator);
-    defer cache.deinit();
-
     const input = try get_input(allocator);
     defer {
         for (input) |line| allocator.free(line);
         allocator.free(input);
     }
 
-    const input_copy = try lib.dupeInput(allocator, input);
-    defer {
-        for (input_copy) |sl| allocator.free(sl);
-        allocator.free(input_copy);
-    }
+    const map = try lib2.Map.init(allocator, input);
+    defer map.deinit();
 
-    std.debug.print("count: {d}\n", .{try lib.walkGuard(input, &cache)});
-    std.debug.print("cache count: {d}\n", .{cache.count()});
-    std.debug.print("loops: {d}\n", .{try lib.findLoops(allocator, input_copy, &cache)});
+    const map2 = try map.clone();
+    defer map2.deinit();
+
+    std.debug.print("count: {d}\n", .{try map.walkGuard()});
+    std.debug.print("loops: {d}\n", .{try map2.findLoops()});
     // for (input) |line| { }
 }

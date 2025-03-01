@@ -6,7 +6,7 @@ test "test" {}
 fn parseInput() void {}
 
 /// caller takes ownership of memory
-fn dupeInput(allocator: std.mem.Allocator, input_to_copy: []const []const u8) ![][]u8 {
+pub fn dupeInput(allocator: std.mem.Allocator, input_to_copy: []const []const u8) ![][]u8 {
     const result = try allocator.alloc([]u8, input_to_copy.len);
     for (input_to_copy, 0..) |sl, idx| {
         result[idx] = try allocator.dupe(u8, sl);
@@ -183,7 +183,7 @@ test "test - advanceCursor 1" {
 
     const actual = try advanceCursor(param, GuardPosition{ .y = 6, .x = 4 }, GuardPosition{ .y = 5, .x = 4 }, false);
 
-    try testing.expectEqual(MoveResult.regular_cell, actual);
+    try testing.expectEqual(MoveResultEnum.regular_cell, actual);
     try testing.expectEqual('^', param[5][4]);
     try testing.expectEqual('|', param[6][4]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
@@ -210,7 +210,7 @@ test "test - advanceCursor 2" {
 
     errdefer printMap(param);
 
-    try testing.expectEqual(MoveResult.obstruction, actual);
+    try testing.expectEqual(MoveResultEnum.obstruction, actual);
     try testing.expectEqual('+', param[1][4]);
     try testing.expectEqual('>', param[1][5]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
@@ -237,7 +237,7 @@ test "test - advanceCursor 3" {
 
     errdefer printMap(param);
 
-    try testing.expectEqual(MoveResult.already_visited, actual);
+    try testing.expectEqual(MoveResultEnum.already_visited, actual);
     try testing.expectEqual('<', param[6][4]);
     try testing.expectEqual('-', param[6][5]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
@@ -264,24 +264,24 @@ test "test - advanceCursor 4" {
 
     errdefer printMap(param);
 
-    try testing.expectEqual(MoveResult.regular_cell, actual);
+    try testing.expectEqual(MoveResultEnum.regular_cell, actual);
     try testing.expectEqual('+', param[6][4]);
     try testing.expectEqual('<', param[6][3]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-const MoveResult = enum { already_visited, obstruction, obstruction_already_visited, regular_cell };
+const MoveResultEnum = enum { already_visited, obstruction, obstruction_already_visited, regular_cell };
 
 /// result is number of positions visited;
 // cases:
 // - 1 we want to move to an unvisited, unobstructed cell
 // - 2 we want to move to a cell with an obstruction
 // - 3 we want to move to an already visited cell
-pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_position: GuardPosition, current_pos_overlapped: bool) MapOpError!MoveResult {
+pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_position: GuardPosition, current_pos_overlapped: bool) MapOpError!MoveResultEnum {
     const current_char = &input[current_position.y][current_position.x];
     const next_char = &input[next_position.y][next_position.x];
 
-    var result = MoveResult.regular_cell;
+    var result = MoveResultEnum.regular_cell;
 
     // printMap(input);
     // std.debug.print("currentchar: {s}\n", .{[_]u8{ current_char.*, ' ', next_char.* }});
@@ -291,7 +291,7 @@ pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_positi
     if (is_obstructed(next_char.*)) {
         current_char.* = '+';
 
-        result = MoveResult.obstruction;
+        result = MoveResultEnum.obstruction;
 
         // fixed bug thx
         // https://www.reddit.com/r/adventofcode/comments/1h7x808/comment/m0ol010/
@@ -307,13 +307,13 @@ pub fn advanceCursor(input: [][]u8, current_position: GuardPosition, next_positi
             char_to_the_right = try coords_to_the_right.get_mut_char_from_input(input);
         }
 
-        if (char_to_the_right.* == '|' or char_to_the_right.* == '-') result = MoveResult.obstruction_already_visited;
+        if (char_to_the_right.* == '|' or char_to_the_right.* == '-') result = MoveResultEnum.obstruction_already_visited;
 
         char_to_the_right.* = new_direction.to_char();
 
         return result;
     } else {
-        if (next_char.* == '|' or next_char.* == '-') result = MoveResult.already_visited;
+        if (next_char.* == '|' or next_char.* == '-') result = MoveResultEnum.already_visited;
 
         current_char.* = if (current_pos_overlapped) '+' else if (current_direction == .Up or current_direction == .Down) '|' else '-';
         next_char.* = current_direction.to_char();
@@ -412,10 +412,10 @@ pub fn walkGuard(input: [][]u8, maybe_cache: ?*Cache) !u64 {
         if (prev_iteration_already_visited) prev_iteration_already_visited = false;
 
         switch (move_result) {
-            MoveResult.already_visited => prev_iteration_already_visited = true,
-            MoveResult.obstruction_already_visited => {},
-            MoveResult.obstruction => positions_visited += 1,
-            MoveResult.regular_cell => positions_visited += 1,
+            MoveResultEnum.already_visited => prev_iteration_already_visited = true,
+            MoveResultEnum.obstruction_already_visited => {},
+            MoveResultEnum.obstruction => positions_visited += 1,
+            MoveResultEnum.regular_cell => positions_visited += 1,
         }
     }
 
@@ -424,7 +424,7 @@ pub fn walkGuard(input: [][]u8, maybe_cache: ?*Cache) !u64 {
     return positions_visited;
 }
 
-test "findLoop - 1" {
+test "findLoop - no loop" {
     var param = try testing.allocator.alloc([]u8, 10);
     param[0] = try testing.allocator.dupe(u8, "....#.....");
     param[1] = try testing.allocator.dupe(u8, "....+---+#");
@@ -441,7 +441,7 @@ test "findLoop - 1" {
         testing.allocator.free(param);
     }
 
-    try testing.expectEqual(true, try findLoop(testing.allocator, null, param));
+    try testing.expectEqual(false, try findLoop(testing.allocator, null, param));
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
@@ -467,29 +467,32 @@ test "findLoop - cache" {
 
     try cache.put(.{ GuardPosition{ .x = 4, .y = 5 }, Direction.Up }, {});
 
-    try testing.expectEqual(true, try findLoop(testing.allocator, &cache, param));
+    try testing.expectEqual(false, try findLoop(testing.allocator, &cache, param));
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
 pub const Cache = std.AutoHashMap(struct { GuardPosition, Direction }, void);
 
-pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input: []const []const u8) !bool {
+/// findLoop modifies passed in input slice
+pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input: [][]u8) !bool {
     const inital_pos = try findGuard(input);
     var current_pos = inital_pos;
 
     const current_char: *u8 = &input[current_pos.y][current_pos.x];
-    const new_direction = Direction.from_char(current_char.*).?.turn_right();
-    current_char.* = new_direction.to_char();
+    const curr_direction = Direction.from_char(current_char.*).?;
 
-    var next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, new_direction);
+    var next_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, curr_direction);
 
     var inner_cache = Cache.init(allocator);
     defer inner_cache.deinit();
 
     // std.debug.print("currentpos {any}\n", .{current_pos});
     // std.debug.print("nextpos {any}\n", .{next_pos});
+    //
+    var prev_cell_already_visited = false;
 
-    while (advanceCursor(input, current_pos, next_pos, false)) |_| {
+    while (advanceCursor(input, current_pos, next_pos, prev_cell_already_visited)) |move_result| {
+        printMap(input);
         // std.debug.print("currentpos {any}\n", .{current_pos});
         // std.debug.print("nextpos {any}\n", .{next_pos});
         // std.debug.print("dir {s}\n", .{@tagName(new_direction)});
@@ -503,8 +506,8 @@ pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input:
             if (cache.contains(.{ current_pos, direction })) return true;
         }
 
-        // const gop_result = try inner_cache.getOrPut(.{ current_pos, direction });
-        // if (gop_result.found_existing) return true;
+        const gop_result = try inner_cache.getOrPut(.{ current_pos, direction });
+        if (gop_result.found_existing) return true;
 
         const prev_y = current_pos.y;
         const prev_x = current_pos.x;
@@ -514,9 +517,12 @@ pub fn findLoop(allocator: std.mem.Allocator, maybe_outer_cache: ?*Cache, input:
             else => return err,
         };
 
-        // if (move_result == MoveResult.obstruction_already_visited) return true;
+        switch (move_result) {
+            MoveResultEnum.obstruction_already_visited, MoveResultEnum.already_visited => prev_cell_already_visited = true,
+            else => {},
+        }
 
-        printMap(input);
+        // printMap(input);
         if (current_pos.eql(inital_pos)) {
             return true;
         }
@@ -593,13 +599,58 @@ test "findLoops - 4" {
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-// /// result is number of loops visited;
-// // algo is as follows: every time we re-rencounter a cell we've stepped on, we
-// // copy the map and run a  line straigh ahead to the right; if we find a '+'
-// // it is a position where a loop could be successfully created
-pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, cache: ?*Cache) !u64 {
+test "findLoops - 5" {
+    var param = try testing.allocator.alloc([]u8, 4);
+    param[0] = try testing.allocator.dupe(u8, "....");
+    param[1] = try testing.allocator.dupe(u8, "#...");
+    param[2] = try testing.allocator.dupe(u8, ".^#.");
+    param[3] = try testing.allocator.dupe(u8, ".#..");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    try testing.expectEqual(0, try findLoops(testing.allocator, param, null));
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "findLoops - 6" {
+    var param = try testing.allocator.alloc([]u8, 3);
+    param[0] = try testing.allocator.dupe(u8, "....");
+    param[1] = try testing.allocator.dupe(u8, "#..#");
+    param[2] = try testing.allocator.dupe(u8, ".^#.");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    try testing.expectEqual(1, try findLoops(testing.allocator, param, null));
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "findLoops - 7" {
+    var param = try testing.allocator.alloc([]u8, 5);
+    param[0] = try testing.allocator.dupe(u8, ".##..");
+    param[1] = try testing.allocator.dupe(u8, "....#");
+    param[2] = try testing.allocator.dupe(u8, ".....");
+    param[3] = try testing.allocator.dupe(u8, ".^.#.");
+    param[4] = try testing.allocator.dupe(u8, ".....");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    try testing.expectEqual(1, try findLoops(testing.allocator, param, null));
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+/// result is number of loops visited;
+pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, _: ?*Cache) !u64 {
     var cycles: u64 = 0;
     var prev_iteration_already_visited = false;
+
+    var cache = Cache.init(allocator);
+    defer cache.deinit();
 
     const inital_pos = try findGuard(input);
     var current_pos = inital_pos;
@@ -608,6 +659,7 @@ pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, cache: ?*Cache) !u
 
         current_pos = try findGuard(input);
         const direction = Direction.from_char(input[current_pos.y][current_pos.x]).?;
+        try cache.put(.{ current_pos, direction }, {});
 
         const prev_y = current_pos.y;
         const prev_x = current_pos.x;
@@ -617,30 +669,35 @@ pub fn findLoops(allocator: std.mem.Allocator, input: [][]u8, cache: ?*Cache) !u
             else => return err,
         };
 
-        // const next_char = try next_pos.get_char_from_input(input);
-        if (!next_pos.eql(inital_pos)) {
+        const next_char = try next_pos.get_char_from_input(input);
+        if (next_char.* == '.') {
+            const duped_input = try dupeInput(allocator, input);
+            defer {
+                for (duped_input) |sl| allocator.free(sl);
+                allocator.free(duped_input);
+            }
+            try addObstructionInFront(duped_input);
+            if (try findLoop(allocator, &cache, duped_input)) {
+                // printMap(input);
+                cycles += 1;
+            }
 
             // TODO: for each direction that isn't the direction we're coming from
             // dupe input, add obstacle in that direction, check for loops
 
             // std.debug.print("next char: {s}\n", .{@tagName(direction)});
             // std.debug.print("next char: {s}\n", .{[_]u8{next_char.*}});
-            if (try findLoop(allocator, cache, input)) {
-                printMap(input);
-                cycles += 1;
-            }
         }
 
         // if (prev_iteration_already_visited) {
         //     printMap(input);
-        //     prev_iteration_already_visited = false;
         // }
 
         const move_result = try advanceCursor(input, current_pos, next_pos, prev_iteration_already_visited);
         prev_iteration_already_visited = false;
 
         switch (move_result) {
-            MoveResult.already_visited => prev_iteration_already_visited = true,
+            MoveResultEnum.already_visited => prev_iteration_already_visited = true,
             else => {},
         }
     }
@@ -665,23 +722,166 @@ test "addObstruction - 1" {
         testing.allocator.free(param);
     }
 
-    try addObstruction(param, .Left);
+    try addObstructionInFront(param);
 
     printMap(param);
 
-    try testing.expectEqual('#', param[6][3]);
+    try testing.expectEqual('#', param[5][4]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
 
-// /// result is number of loops visited;
-// // algo is as follows: every time we re-rencounter a cell we've stepped on, we
-// // copy the map and run a  line straigh ahead to the right; if we find a '+'
-// // it is a position where a loop could be successfully created
-pub fn addObstruction(input: [][]u8, direction: Direction) !void {
-    const initial_pos = try findGuard(input);
-    const new_obstacle_pos = try getNeighboringCoords(input, initial_pos.y, initial_pos.x, direction);
+pub fn addObstructionInFront(input: [][]u8) !void {
+    const current_pos = try findGuard(input);
+    const direction = Direction.from_char(input[current_pos.y][current_pos.x]).?;
+    const new_obstacle_pos = try getNeighboringCoords(input, current_pos.y, current_pos.x, direction);
 
     const mut_char = try new_obstacle_pos.get_mut_char_from_input(input);
 
     mut_char.* = '#';
+}
+
+test "test - moveGuard 1" {
+    var param = try testing.allocator.alloc([]u8, 3);
+    param[0] = try testing.allocator.dupe(u8, "..#..");
+    param[1] = try testing.allocator.dupe(u8, "..^..");
+    param[2] = try testing.allocator.dupe(u8, ".....");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try moveGuard(param, .regular_cell, GuardPosition{ .y = 0, .x = 2 });
+
+    try testing.expectEqual(.{ false, null }, actual);
+    try testing.expectEqual('#', param[0][2]);
+    try testing.expectEqual('^', param[1][2]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "test - moveGuard 2" {
+    var param = try testing.allocator.alloc([]u8, 3);
+    param[0] = try testing.allocator.dupe(u8, ".....");
+    param[1] = try testing.allocator.dupe(u8, "..^..");
+    param[2] = try testing.allocator.dupe(u8, ".....");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try moveGuard(param, .regular_cell, GuardPosition{ .y = 0, .x = 2 });
+
+    errdefer printMap(param);
+
+    try testing.expectEqual(.{ true, MovedTo.regular_cell }, actual);
+    try testing.expectEqual('^', param[0][2]);
+    try testing.expectEqual('|', param[1][2]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "test - moveGuard 3" {
+    var param = try testing.allocator.alloc([]u8, 3);
+    param[0] = try testing.allocator.dupe(u8, ".....");
+    param[1] = try testing.allocator.dupe(u8, "..^..");
+    param[2] = try testing.allocator.dupe(u8, ".....");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try moveGuard(param, .already_visited_cell, GuardPosition{ .y = 0, .x = 2 });
+
+    errdefer printMap(param);
+
+    try testing.expectEqual(.{ true, MovedTo.regular_cell }, actual);
+    try testing.expectEqual('^', param[0][2]);
+    try testing.expectEqual('|', param[1][2]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+// test "test - moveGuard 4" {
+//     var param = try testing.allocator.alloc([]u8, 10);
+//     param[0] = try testing.allocator.dupe(u8, "....#.....");
+//     param[1] = try testing.allocator.dupe(u8, "....+---+#");
+//     param[2] = try testing.allocator.dupe(u8, "....|...|.");
+//     param[3] = try testing.allocator.dupe(u8, "..#.|...|.");
+//     param[4] = try testing.allocator.dupe(u8, "....|..#|.");
+//     param[5] = try testing.allocator.dupe(u8, "....|...|.");
+//     param[6] = try testing.allocator.dupe(u8, ".#..<---+.");
+//     param[7] = try testing.allocator.dupe(u8, "........#.");
+//     param[8] = try testing.allocator.dupe(u8, "#.........");
+//     param[9] = try testing.allocator.dupe(u8, "......#...");
+//     defer {
+//         for (param) |line| testing.allocator.free(line);
+//         testing.allocator.free(param);
+//     }
+
+//     const actual = try moveGuard(param, GuardPosition{ .y = 6, .x = 4 }, GuardPosition{ .y = 6, .x = 3 }, true);
+
+//     errdefer printMap(param);
+
+//     try testing.expectEqual(MoveResultEnum.regular_cell, actual);
+//     try testing.expectEqual('+', param[6][4]);
+//     try testing.expectEqual('<', param[6][3]);
+//     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+// }
+
+const MovedTo = union(enum) { already_visited_cell: Direction, regular_cell };
+
+/// result is number of positions visited;
+// cases:
+// - 1 we want to move to an unvisited, unobstructed cell
+// - 2 we want to move to a cell with an obstruction
+// - 3 we want to move to an already visited cell
+pub fn moveGuard(input: [][]u8, current_pos_status: MovedTo, next_position: GuardPosition) MapOpError!struct { bool, ?MovedTo } {
+    const current_position = try findGuard(input);
+    const current_char = try current_position.get_mut_char_from_input(input);
+    const next_char = try next_position.get_mut_char_from_input(input);
+
+    var result = MovedTo.regular_cell;
+
+    // printMap(input);
+    // std.debug.print("currentchar: {s}\n", .{[_]u8{ current_char.*, ' ', next_char.* }});
+
+    var current_direction = Direction.from_char(current_char.*).?;
+
+    if (is_obstructed(next_char.*)) {
+        return .{ false, null };
+    } else {
+        if (next_char.* == '|' or next_char.* == '-' or next_char.* == '+') result = MovedTo.already_visited_cell;
+
+        current_char.* = if (current_pos_status == .already_visited_cell) '+' else if (current_direction == .Up or current_direction == .Down) '|' else '-';
+        next_char.* = current_direction.to_char();
+    }
+
+    // if (is_obstructed(next_char.*)) {
+    //     current_char.* = '+';
+
+    //     result = MoveResultEnum.obstruction;
+
+    //     // fixed bug thx
+    //     // https://www.reddit.com/r/adventofcode/comments/1h7x808/comment/m0ol010/
+
+    //     var new_direction = current_direction.turn_right();
+    //     var coords_to_the_right = try getNeighboringCoords(input, current_position.y, current_position.x, new_direction);
+    //     var char_to_the_right = try coords_to_the_right.get_mut_char_from_input(input);
+
+    //     // this can't fail, worst case we come back from where we came from
+    //     while (is_obstructed(char_to_the_right.*)) {
+    //         new_direction = new_direction.turn_right();
+    //         coords_to_the_right = try getNeighboringCoords(input, current_position.y, current_position.x, new_direction);
+    //         char_to_the_right = try coords_to_the_right.get_mut_char_from_input(input);
+    //     }
+
+    //     if (char_to_the_right.* == '|' or char_to_the_right.* == '-') result = MoveResultEnum.obstruction_already_visited;
+
+    //     char_to_the_right.* = new_direction.to_char();
+
+    //     return result;
+    // } else {
+    //     if (next_char.* == '|' or next_char.* == '-') result = MoveResultEnum.already_visited;
+
+    //     current_char.* = if (current_pos_overlapped) '+' else if (current_direction == .Up or current_direction == .Down) '|' else '-';
+    //     next_char.* = current_direction.to_char();
+    // }
+    return .{ true, result };
 }
