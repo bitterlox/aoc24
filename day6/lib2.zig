@@ -584,11 +584,14 @@ pub const Map = struct {
             new_data[idx] = try self.allocator.dupe(Position, sl);
         }
 
+        const curr_pos_x = self.current_position.cell.x;
+        const curr_pos_y = self.current_position.cell.y;
+
         const ptr: *Self = try self.allocator.create(Self);
         ptr.* = Self{
             .data = new_data,
             .allocator = self.allocator,
-            .current_position = GuardPosition{ .cell = self.current_position.cell, .direction = self.current_position.direction },
+            .current_position = GuardPosition{ .cell = &new_data[curr_pos_y][curr_pos_x], .direction = self.current_position.direction },
         };
 
         return ptr;
@@ -777,7 +780,7 @@ pub const Map = struct {
 
                 try cloned_map.addObstacleInFront();
                 if (try cloned_map.hasLoop()) {
-                    cloned_map.print();
+                    // cloned_map.print();
                     cycles += 1;
                 }
             }

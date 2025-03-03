@@ -1,5 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
+// This code returns a result off by ~80/90
+// i spent too much time trying to debug this and then decided for a
+// OOP oriented refactoring which by virtue of its cleanliness(and lessons learned?)
+// removed the bug without me having to track it down
 
 test "test" {}
 
@@ -185,6 +189,32 @@ test "test - advanceCursor 1" {
 
     try testing.expectEqual(MoveResultEnum.regular_cell, actual);
     try testing.expectEqual('^', param[5][4]);
+    try testing.expectEqual('|', param[6][4]);
+    // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
+}
+
+test "test - advanceCursor 1.1" {
+    var param = try testing.allocator.alloc([]u8, 10);
+    param[0] = try testing.allocator.dupe(u8, "....#.....");
+    param[1] = try testing.allocator.dupe(u8, ".........#");
+    param[2] = try testing.allocator.dupe(u8, "..........");
+    param[3] = try testing.allocator.dupe(u8, "..#.......");
+    param[4] = try testing.allocator.dupe(u8, ".......#..");
+    param[5] = try testing.allocator.dupe(u8, "....^.....");
+    param[6] = try testing.allocator.dupe(u8, ".#..|.....");
+    param[7] = try testing.allocator.dupe(u8, "........#.");
+    param[8] = try testing.allocator.dupe(u8, "#.........");
+    param[9] = try testing.allocator.dupe(u8, "......#...");
+    defer {
+        for (param) |line| testing.allocator.free(line);
+        testing.allocator.free(param);
+    }
+
+    const actual = try advanceCursor(param, GuardPosition{ .y = 6, .x = 4 }, GuardPosition{ .y = 5, .x = 4 }, false);
+
+    try testing.expectEqual(MoveResultEnum.regular_cell, actual);
+    try testing.expectEqual('^', param[4][4]);
+    try testing.expectEqual('|', param[5][4]);
     try testing.expectEqual('|', param[6][4]);
     // try testing.expectEqual('^', param[new_pos_1.y][new_pos_1.x]);
 }
