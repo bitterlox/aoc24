@@ -44,6 +44,18 @@ fn firstPartResult(allocator: std.mem.Allocator, calibrations: []lib.Calibration
     return result;
 }
 
+fn secondPartResult(allocator: std.mem.Allocator, calibrations: []lib.Calibration) !u64 {
+    var result: u64 = 0;
+
+    for (calibrations) |calibration| {
+        const value, _ = calibration;
+        const valid = try lib.calibrationIsValidWithConcat(allocator, calibration);
+        if (valid) result += value;
+    }
+
+    return result;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -53,8 +65,11 @@ pub fn main() !void {
         for (input) |line| allocator.free(line.@"1");
         allocator.free(input);
     }
+    const first = try firstPartResult(allocator, input);
+    const second = try secondPartResult(allocator, input);
 
     // std.debug.print("input: {any}\n", .{input});
-    std.debug.print("result: {d}\n", .{try firstPartResult(allocator, input)});
+    std.debug.print("result: {d}\n", .{first});
+    std.debug.print("result: {d}\n", .{second});
     // for (input) |line| { }
 }
