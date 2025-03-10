@@ -240,7 +240,8 @@ const Cell = struct {
 
     allocator: std.mem.Allocator,
 
-    const Neighbors = std.AutoHashMap(Direction, struct { cell: *Cell, distance: usize });
+    const Neighbor = struct { cell: *Cell, distance: usize };
+    const Neighbors = std.AutoHashMap(Direction, Neighbor);
     const Self = @This();
 
     fn init(allocator: std.mem.Allocator, x: usize, y: usize, content: CellContent) !Self {
@@ -313,15 +314,31 @@ test "establishNeihborRelationships - 1" {
     map.print();
 
     try establishNeighbourRelationships(testing.allocator, map.data);
+
+    const neighbor = map.data[1][8].neighbors.get(.S);
+
+    try testing.expectEqual(6, neighbor.?.distance);
+    try testing.expectEqualDeep(&map.data[8][8], neighbor.?.cell);
 }
 
-// fn establishRelationship(maybe_first: ?*Cell, maybe_last: ?*Cell, direction: Direction, distance: usize) void {
-//     if (maybe_first) |first| {
-//         if (maybe_last) |last| {
-//             first.*.neighbors.put(direction.opposite(), last);
-//         }
-//     }
-// }
+fn establishRelationship(maybe_first: ?*Cell, maybe_last: ?*Cell, direction: Direction) !void {
+    if (maybe_first) |first| {
+        if (maybe_last) |last| {
+            const distance: usize = switch (direction) {
+                Direction.S => last.y - first.y,
+                Direction.E => last.x - first.x,
+                Direction.SE => @abs(0),
+                else => unreachable,
+            };
+            if (!first.*.neighbors.contains(direction.opposite())) {
+                try first.*.neighbors.put(direction.opposite(), .{ .cell = last, .distance = distance });
+            }
+            if (!last.*.neighbors.contains(direction)) {
+                try first.*.neighbors.put(direction, .{ .cell = last, .distance = distance });
+            }
+        }
+    }
+}
 
 // when iterator function is ready use that
 fn establishNeighbourRelationships(_: std.mem.Allocator, data: [][]Cell) !void {
@@ -344,6 +361,7 @@ fn establishNeighbourRelationships(_: std.mem.Allocator, data: [][]Cell) !void {
                 else => {},
             }
             if (antenna1) |a1| {
+                try establishRelationship(antenna1, antenna2, .S);
                 if (antenna2) |a2| {
                     std.debug.print("{d},{d}: {s} ", .{ a1.x, a1.y, &[_]u8{a1.content.antenna} });
                     std.debug.print("{d},{d}: {s}\n", .{ a2.x, a2.y, &[_]u8{a2.content.antenna} });
