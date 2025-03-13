@@ -225,13 +225,6 @@ fn iterateInDirection(map: [][]Cell, start: Cell, direction: Direction) MapDirec
     };
 }
 
-// TODO:
-// make function that gets passed a Direction and starting coordinates and input
-// and returns a []*Cell
-// for that direction
-// implement this functionality by returning an iterator
-// https://danthedev.com/zig-iterators/
-
 const Cell = struct {
     x: usize,
     y: usize,
@@ -289,90 +282,9 @@ fn parseInputString(allocator: std.mem.Allocator, input: []const []const u8) ![]
     return data;
 }
 
-test "establishNeihborRelationships - 1" {
-    var input = try testing.allocator.alloc([]u8, 12);
-    input[0] = try testing.allocator.dupe(u8, "............");
-    input[1] = try testing.allocator.dupe(u8, "........0...");
-    input[2] = try testing.allocator.dupe(u8, ".....0......");
-    input[3] = try testing.allocator.dupe(u8, ".......0....");
-    input[4] = try testing.allocator.dupe(u8, "....0.......");
-    input[5] = try testing.allocator.dupe(u8, "......A.....");
-    input[6] = try testing.allocator.dupe(u8, "............");
-    input[7] = try testing.allocator.dupe(u8, "............");
-    input[8] = try testing.allocator.dupe(u8, "........A...");
-    input[9] = try testing.allocator.dupe(u8, ".........A..");
-    input[10] = try testing.allocator.dupe(u8, "............");
-    input[11] = try testing.allocator.dupe(u8, "............");
-    defer {
-        for (input) |line| testing.allocator.free(line);
-        testing.allocator.free(input);
-    }
-
-    const map = try Map.init(testing.allocator, input);
-    defer map.deinit();
-
-    map.print();
-
-    try establishNeighbourRelationships(testing.allocator, map.data);
-
-    const neighbor = map.data[1][8].neighbors.get(.S);
-
-    try testing.expectEqual(6, neighbor.?.distance);
-    try testing.expectEqualDeep(&map.data[8][8], neighbor.?.cell);
-}
-
-fn establishRelationship(maybe_first: ?*Cell, maybe_last: ?*Cell, direction: Direction) !void {
-    if (maybe_first) |first| {
-        if (maybe_last) |last| {
-            const distance: usize = switch (direction) {
-                Direction.S => last.y - first.y,
-                Direction.E => last.x - first.x,
-                Direction.SE => @abs(0),
-                else => unreachable,
-            };
-            if (!first.*.neighbors.contains(direction.opposite())) {
-                try first.*.neighbors.put(direction.opposite(), .{ .cell = last, .distance = distance });
-            }
-            if (!last.*.neighbors.contains(direction)) {
-                try first.*.neighbors.put(direction, .{ .cell = last, .distance = distance });
-            }
-        }
-    }
-}
-
-// when iterator function is ready use that
-fn establishNeighbourRelationships(_: std.mem.Allocator, data: [][]Cell) !void {
-    // 4 passes:
-    // - N to S
-    // - W to e
-    // - NW to SE
-    // - NE to SW
-
-    for (0..data.len) |x_coord| {
-        var it = iterateInDirection(data, data[0][x_coord], .S);
-        var antenna1: ?*Cell = null;
-        var antenna2: ?*Cell = null;
-        while (it.next()) |cell| {
-            switch (cell.content) {
-                CellContent.antenna => |_| {
-                    antenna1 = antenna2;
-                    antenna2 = cell;
-                },
-                else => {},
-            }
-            if (antenna1) |a1| {
-                try establishRelationship(antenna1, antenna2, .S);
-                if (antenna2) |a2| {
-                    std.debug.print("{d},{d}: {s} ", .{ a1.x, a1.y, &[_]u8{a1.content.antenna} });
-                    std.debug.print("{d},{d}: {s}\n", .{ a2.x, a2.y, &[_]u8{a2.content.antenna} });
-                }
-            }
-        }
-    }
-}
-
 pub const Map = struct {
     data: [][]Cell,
+    antennas: std.AutoHashMap(u8, []Cell),
     allocator: std.mem.Allocator,
 
     const Self = @This();
@@ -381,9 +293,35 @@ pub const Map = struct {
     pub fn init(allocator: std.mem.Allocator, input: []const []const u8) !*Self {
         const data = try parseInputString(allocator, input);
 
+        var map = std.AutoHashMap(u8, []Cell).init(allocator);
+
+        for (data) |row| {
+            for (row) |cell| {
+                switch (cell.content) {
+                    CellContent.antenna => |c| {
+                        if (map.getEntry(c)) |entry| {
+                            var list = std.ArrayList(Cell).fromOwnedSlice(allocator, entry.value_ptr.*);
+                            defer list.deinit();
+
+                            try list.append(cell);
+                            try map.put(c, try list.toOwnedSlice());
+                        } else {
+                            var list = std.ArrayList(Cell).init(allocator);
+                            defer list.deinit();
+
+                            try list.append(cell);
+                            try map.put(c, try list.toOwnedSlice());
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+
         const ptr: *Self = try allocator.create(Self);
         ptr.* = Self{
             .data = data,
+            .antennas = map,
             .allocator = allocator,
         };
 
@@ -395,6 +333,13 @@ pub const Map = struct {
             for (sl) |cell| cell.deinit();
             self.allocator.free(sl);
         }
+
+        var it = self.antennas.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.antennas.deinit();
+
         self.allocator.free(self.data);
         self.allocator.destroy(self);
     }
@@ -415,6 +360,14 @@ pub const Map = struct {
         }
 
         std.debug.print("\n", .{});
+
+        var it = self.antennas.iterator();
+        while (it.next()) |entry| {
+            for (entry.value_ptr.*) |cell| {
+                std.debug.print("{c}({d} {d})", .{ cell.content.antenna, cell.x, cell.y });
+            }
+            std.debug.print("\n", .{});
+        }
     }
 };
 

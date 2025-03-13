@@ -1,5 +1,5 @@
 const std = @import("std");
-const lib = @import("lib.zig");
+const lib = @import("lib2.zig");
 
 /// Caller takes ownership of the result
 fn get_input(allocator: std.mem.Allocator) anyerror![][]u8 {
