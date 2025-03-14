@@ -41,16 +41,21 @@ pub fn main() !void {
         allocator.free(input);
     }
 
-    const map = try lib.Map.init(allocator, input);
-    defer map.deinit();
+    const map1 = try lib.Map.init(allocator, input);
+    defer map1.deinit();
 
-    for (input) |line| std.debug.print("{s}\n", .{line});
+    const map2 = try lib.Map.init(allocator, input);
+    defer map2.deinit();
 
-    std.debug.print("\n", .{});
+    // for (input) |line| std.debug.print("{s}\n", .{line});
 
-    map.print();
+    try map1.setAntinodes();
+    map1.print();
 
-    // std.debug.print("result: {d}\n", .{first});
-    // std.debug.print("result: {d}\n", .{second});
+    try map2.setAntinodesWithResonantFreqs();
+    map2.print();
+
+    std.debug.print("result pt1: {d}\n", .{map1.countAntinodes()});
+    std.debug.print("result pt2: {d}\n", .{map2.countAntinodes()});
     // for (input) |line| { }
 }
