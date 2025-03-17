@@ -16,7 +16,7 @@
         {
           devShells.default = pkgs.mkShell {
             name = "koreader devenv";
-            packages = with pkgs; [ zig ];
+            packages = with pkgs; [ zig_0_13 ];
             shellHook = ''
               echo "welcome to a zig devshell"
             '';
