@@ -106,6 +106,17 @@ pub fn compressDiskmap(allocator: std.mem.Allocator, input: []const ?u64) ![]?u6
     return result;
 }
 
+test "compressOnlyWholeFiles - 1" {
+    const input = &[_]?u64{ 0, null, null, null, 1, null, null, null, 2, null, null, null, null, null, null, 3, 3, 3, 3, 3 };
+
+    const expected = &[_]?u64{ 0, 2, 1, null, null, null, null, null, null, 3, 3, 3, 3, 3, null, null, null, null, null, null };
+
+    const actual = try compressOnlyWholeFiles(testing.allocator, input);
+    defer testing.allocator.free(actual);
+
+    try testing.expectEqualSlices(?u64, expected, actual);
+}
+
 test "compressOnlyWholeFiles - 2" {
     const input = &[_]?u64{ 0, 0, null, null, null, 1, 1, 1, null, null, null, 2, null, null, null, 3, 3, 3, null, 4, 4, null, 5, 5, 5, 5, null, 6, 6, 6, 6, null, 7, 7, 7, null, 8, 8, 8, 8, 9, 9 };
 
@@ -158,85 +169,81 @@ fn findBlockToMove(input: []const ?u64) SliceBounds {
     return result;
 }
 
+fn findEmptySpace(input: []const ?u64, maybe_start: ?usize) SliceBounds {
+    var start_empty_space_idx: usize = 0;
+    var end_empty_space_idx: usize = 0;
+
+    if (maybe_start) |start| {
+        start_empty_space_idx = start;
+    }
+
+    while (start_empty_space_idx < input.len) : (start_empty_space_idx += 1) {
+        if (input[start_empty_space_idx]) |_| {
+            continue;
+        } else {
+            end_empty_space_idx = idxOfFirstNonNullElementForwards(input, start_empty_space_idx);
+            break;
+
+            // std.debug.print("{d}:{d}\n", .{ start_empty_space, end_empty_space });
+            // std.debug.print("space: {d}:{d}\n", .{ start_empty_space_idx, end_empty_space_idx });
+        }
+    }
+    return .{
+        .start = start_empty_space_idx,
+        .end = end_empty_space_idx,
+    };
+}
+
 /// caller owns result slice
 pub fn compressOnlyWholeFiles(allocator: std.mem.Allocator, input: []const ?u64) ![]?u64 {
     const result = try allocator.dupe(?u64, input);
 
-    // var last_null_idx_from_bottom: usize = 0;
+    var block_to_move_bounds = findBlockToMove(result);
+    outer: while (block_to_move_bounds.start > 1) : (block_to_move_bounds = findBlockToMove(result[0..block_to_move_bounds.start])) {
+        const block_to_move = result[block_to_move_bounds.start..block_to_move_bounds.end];
+        // std.debug.print("block_to_move: {d}:{d}\n", .{ block_to_move_bounds.start, block_to_move_bounds.end });
 
-    var start_empty_space: usize = 0;
-    // this assumes there's a block at the last index
-    // var last_space_with_block: usize = result.len - 1;
+        const maybe_elem_to_pack = result[block_to_move_bounds.start];
+        if (maybe_elem_to_pack) |block_val| {
+            var empty_space_bounds = findEmptySpace(result, null);
 
-    outer: while (start_empty_space < result.len) : (start_empty_space += 1) {
-        if (result[start_empty_space]) |_| {
-            continue :outer;
-        } else {
-            const end_empty_space = idxOfFirstNonNullElementForwards(result, start_empty_space);
+            while (empty_space_bounds.end <= block_to_move_bounds.start) {
+                // std.debug.print("space: {d}:{d}\n", .{ empty_space_bounds.start, empty_space_bounds.end });
 
-            // std.debug.print("{d}:{d}\n", .{ start_empty_space, end_empty_space });
-            std.debug.print("space: {d}:{d}\n", .{ start_empty_space, end_empty_space });
-
-            var block_to_move_bounds = findBlockToMove(result);
-            while (block_to_move_bounds.start >= start_empty_space) {
-                const block_to_move = result[block_to_move_bounds.start..block_to_move_bounds.end];
-                std.debug.print("block_to_move: {d}:{d}\n", .{ block_to_move_bounds.start, block_to_move_bounds.end });
-
-                const maybe_elem_to_pack = result[block_to_move_bounds.start];
-                if (maybe_elem_to_pack) |block_val| {
-                    if (block_to_move.len <= end_empty_space - start_empty_space) {
-                        std.debug.print("block fits, moving to {d}:{d}\n", .{ start_empty_space, end_empty_space });
-                        for (0..block_to_move.len) |i| result[start_empty_space + i] = block_val;
-                        start_empty_space += block_to_move.len;
-                        // set what we've moved to null
-                        for (block_to_move_bounds.start..block_to_move_bounds.end) |i| result[i] = null;
-                    } else {
-                        std.debug.print("block doesn't fit, continuing\n", .{});
-                    }
+                if (block_to_move.len <= empty_space_bounds.end - empty_space_bounds.start) {
+                    // std.debug.print("block fits, moving to {d}:{d}\n", .{ empty_space_bounds.start, empty_space_bounds.end });
+                    for (0..block_to_move.len) |i| result[empty_space_bounds.start + i] = block_val;
+                    // empty_space_bounds.start += block_to_move.len;
+                    // set what we've moved to null
+                    for (block_to_move_bounds.start..block_to_move_bounds.end) |i| result[i] = null;
+                    // empty_space_bounds = findEmptySpace(result, null);
+                    continue :outer;
                 } else {
-                    std.debug.print("block_to_move_len: {d}:{d}\n", .{ block_to_move.len, end_empty_space - start_empty_space });
+                    // std.debug.print("block doesn't fit, continuing\n", .{});
+                    empty_space_bounds = findEmptySpace(result, empty_space_bounds.end);
                 }
-                block_to_move_bounds = findBlockToMove(result[0..block_to_move_bounds.start]);
             }
-
-            // var loop_counter: usize = result.len - 1;
-            // inner: while (loop_counter >= 0) : (loop_counter -= 1) {
-            //     std.debug.print("loop_cntr: {d} {d}\n", .{ loop_counter, start_empty_space });
-            //     if (loop_counter < start_empty_space) break :inner;
-
-            //     const maybe_elem_to_pack = result[loop_counter];
-            //     if (maybe_elem_to_pack) |block_val| {
-            //         const idx_of_different_block_or_null = idxOfFirstDifferentElementBackwards(result, loop_counter);
-            //         std.debug.print("elem: {d}:{d}\n", .{ idx_of_different_block_or_null + 1, loop_counter + 1 });
-
-            //         const block_to_move = result[idx_of_different_block_or_null + 1 .. loop_counter + 1];
-
-            //         if (block_to_move.len <= end_empty_space - start_empty_space) {
-            //             std.debug.print("block fits, moving\n", .{});
-            //             for (0..block_to_move.len) |i| result[start_empty_space + i] = block_val;
-            //             // set what we've moved to null
-            //             for (idx_of_different_block_or_null + 1..loop_counter + 1) |i| result[i] = null;
-            //             start_empty_space += block_to_move.len;
-            //             loop_counter = idx_of_different_block_or_null;
-            //             continue :inner;
-            //         } else {
-            //             std.debug.print("block doesn't fit, continuing\n", .{});
-            //             loop_counter = idx_of_different_block_or_null;
-            //             continue :inner;
-            //         }
-
-            //         // result[result_idx] = elem_to_pack;
-            //         // result[index_from_end] = null;
-            //         break :inner;
-            //     } else {
-            //         last_null_idx_from_bottom = loop_counter;
-            //         continue :inner;
-            //     }
-            // }
+        } else {
+            // std.debug.print("block_to_move_len: {d}\n", .{block_to_move.len});
         }
     }
 
     return result;
+}
+
+test "calculateChecksum - 1" {
+    const input = &[_]?u64{ 0, null, null, null, 1, null, null, null, 2, null, null, null, null, null, null, 3, 3, 3, 3, 3 };
+
+    const compressed = try compressOnlyWholeFiles(testing.allocator, input);
+    defer testing.allocator.free(compressed);
+
+    std.debug.print("{any}\n", .{compressed});
+
+    const expected: u64 = 169;
+
+    const actual = calculateChecksum(compressed);
+
+    try testing.expectEqual(expected, actual);
 }
 
 test "calculateChecksum - 2" {
@@ -256,8 +263,6 @@ pub fn calculateChecksum(input: []const ?u64) u64 {
     for (input, 0..) |maybe_elem, idx| {
         if (maybe_elem) |elem| {
             count += elem * @as(u64, @intCast(idx));
-        } else {
-            break;
         }
     }
 

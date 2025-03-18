@@ -43,6 +43,16 @@ fn partOne(allocator: std.mem.Allocator, input: []const u8) !u64 {
     return lib.calculateChecksum(compressed);
 }
 
+fn partTwo(allocator: std.mem.Allocator, input: []const u8) !u64 {
+    const disk_map = try lib.generateDiskmap(allocator, input);
+    defer allocator.free(disk_map);
+
+    const compressed = try lib.compressOnlyWholeFiles(allocator, disk_map);
+    defer allocator.free(compressed);
+
+    return lib.calculateChecksum(compressed);
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -52,4 +62,5 @@ pub fn main() !void {
 
     // std.debug.print("input: {s}\n", .{input});
     std.debug.print("pt1: {d}\n", .{try partOne(allocator, input)});
+    std.debug.print("pt1: {d}\n", .{try partTwo(allocator, input)});
 }
