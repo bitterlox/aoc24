@@ -84,8 +84,8 @@ pub fn compressDiskmap(allocator: std.mem.Allocator, input: []const ?u64) ![]?u6
             continue :outer;
         } else {
             // std.debug.print("{any}\n", .{result});
-            inner: for (1..result.len + 1) |inner_idx| {
-                const index_from_end = result.len - inner_idx;
+            inner: for (1..result.len + 1) |loop_counter| {
+                const index_from_end = result.len - loop_counter;
 
                 if (index_from_end <= idx) break :outer;
 
@@ -96,7 +96,7 @@ pub fn compressDiskmap(allocator: std.mem.Allocator, input: []const ?u64) ![]?u6
                     result[index_from_end] = null;
                     break :inner;
                 } else {
-                    last_null_idx_from_bottom = inner_idx;
+                    last_null_idx_from_bottom = loop_counter;
                     continue :inner;
                 }
             }
@@ -117,73 +117,122 @@ test "compressOnlyWholeFiles - 2" {
     try testing.expectEqualSlices(?u64, expected, actual);
 }
 
+fn idxOfFirstNonNullElementForwards(slice: []const ?u64, current_pos: usize) usize {
+    var tmp: usize = current_pos;
+    for (current_pos..slice.len) |val| {
+        if (slice[val]) |_| break else tmp += 1;
+    }
+    return tmp;
+}
+
+fn idxOfFirstDifferentElementBackwards(slice: []const ?u64, current_pos: usize) usize {
+    const current_val = slice[current_pos];
+    var tmp: usize = current_pos;
+
+    for (0..current_pos) |val| {
+        if (slice[current_pos - val]) |prev_val| {
+            if (prev_val == current_val) tmp -= 1;
+        } else break;
+    }
+    // add one because tmp now points to an empty spot
+    return tmp;
+}
+
+const SliceBounds = struct { start: usize, end: usize };
+fn findBlockToMove(input: []const ?u64) SliceBounds {
+    var result: SliceBounds = undefined;
+
+    var loop_counter: usize = input.len - 1;
+    while (loop_counter >= 0) : (loop_counter -= 1) {
+        const maybe_elem_to_pack = input[loop_counter];
+        if (maybe_elem_to_pack) |_| {
+            const idx_of_different_block_or_null = idxOfFirstDifferentElementBackwards(input, loop_counter);
+            result.end = loop_counter + 1;
+            result.start = idx_of_different_block_or_null + 1;
+            break;
+        } else {
+            continue;
+        }
+    }
+
+    return result;
+}
+
 /// caller owns result slice
 pub fn compressOnlyWholeFiles(allocator: std.mem.Allocator, input: []const ?u64) ![]?u64 {
     const result = try allocator.dupe(?u64, input);
 
-    var last_null_idx_from_bottom: usize = 0;
+    // var last_null_idx_from_bottom: usize = 0;
 
-    var result_idx: usize = 0;
+    var start_empty_space: usize = 0;
+    // this assumes there's a block at the last index
+    // var last_space_with_block: usize = result.len - 1;
 
-    outer: while (result_idx < result.len) : (result_idx += 1) {
-        if (result[result_idx]) |_| {
+    outer: while (start_empty_space < result.len) : (start_empty_space += 1) {
+        if (result[start_empty_space]) |_| {
             continue :outer;
         } else {
-            const start_empty_space = result_idx;
-            const end_empty_space = blk: {
-                var tmp: usize = start_empty_space;
-                innerFor: for (start_empty_space..result.len) |val| {
-                    if (result[val]) |_| break :innerFor else tmp += 1;
-                }
-                break :blk tmp;
-            };
-            const empty_space_length = end_empty_space - start_empty_space;
+            const end_empty_space = idxOfFirstNonNullElementForwards(result, start_empty_space);
+
             // std.debug.print("{d}:{d}\n", .{ start_empty_space, end_empty_space });
             std.debug.print("space: {d}:{d}\n", .{ start_empty_space, end_empty_space });
-            var idx_of_last_block = result.len;
-            inner: for (1..result.len + 1) |inner_idx| {
-                // FIXME this is overflowing idx_of_last_block is small and inner is big
-                std.debug.print("dixse: {d}:{d}\n", .{ idx_of_last_block, inner_idx });
-                const index_from_end = idx_of_last_block - inner_idx;
 
-                if (index_from_end <= result_idx) break :outer;
+            var block_to_move_bounds = findBlockToMove(result);
+            while (block_to_move_bounds.start >= start_empty_space) {
+                const block_to_move = result[block_to_move_bounds.start..block_to_move_bounds.end];
+                std.debug.print("block_to_move: {d}:{d}\n", .{ block_to_move_bounds.start, block_to_move_bounds.end });
 
-                const maybe_elem_to_pack = result[index_from_end];
+                const maybe_elem_to_pack = result[block_to_move_bounds.start];
                 if (maybe_elem_to_pack) |block_val| {
-                    const first_empty_spot_before_block = blk: {
-                        var tmp: usize = index_from_end;
-                        innerFor: for (0..index_from_end) |val| {
-                            if (result[index_from_end - val]) |backlooping_val| {
-                                if (backlooping_val == block_val) tmp -= 1 else break :innerFor;
-                            } else break :innerFor;
-                        }
-                        // add one because tmp now points to an empty spot
-                        break :blk tmp;
-                    };
-                    // TODO: we good with indexes. need some logic to check if
-                    // the piece of data we find within end indexes fits int the empty spots at the start
-                    // if yes, move, else, restart end loop and check lower data
-                    const block_to_move = result[first_empty_spot_before_block + 1 .. index_from_end + 1];
-
-                    std.debug.print("{d} elem: {d}:{d}\n", .{ block_to_move.len, first_empty_spot_before_block + 1, index_from_end + 1 });
-                    if (block_to_move.len <= empty_space_length) {
-                        std.debug.print("block fits, moving\n", .{});
+                    if (block_to_move.len <= end_empty_space - start_empty_space) {
+                        std.debug.print("block fits, moving to {d}:{d}\n", .{ start_empty_space, end_empty_space });
                         for (0..block_to_move.len) |i| result[start_empty_space + i] = block_val;
-                        continue :inner;
+                        start_empty_space += block_to_move.len;
+                        // set what we've moved to null
+                        for (block_to_move_bounds.start..block_to_move_bounds.end) |i| result[i] = null;
                     } else {
                         std.debug.print("block doesn't fit, continuing\n", .{});
-                        idx_of_last_block = first_empty_spot_before_block;
-                        continue :inner;
                     }
-
-                    // result[result_idx] = elem_to_pack;
-                    // result[index_from_end] = null;
-                    break :inner;
                 } else {
-                    last_null_idx_from_bottom = inner_idx;
-                    continue :inner;
+                    std.debug.print("block_to_move_len: {d}:{d}\n", .{ block_to_move.len, end_empty_space - start_empty_space });
                 }
+                block_to_move_bounds = findBlockToMove(result[0..block_to_move_bounds.start]);
             }
+
+            // var loop_counter: usize = result.len - 1;
+            // inner: while (loop_counter >= 0) : (loop_counter -= 1) {
+            //     std.debug.print("loop_cntr: {d} {d}\n", .{ loop_counter, start_empty_space });
+            //     if (loop_counter < start_empty_space) break :inner;
+
+            //     const maybe_elem_to_pack = result[loop_counter];
+            //     if (maybe_elem_to_pack) |block_val| {
+            //         const idx_of_different_block_or_null = idxOfFirstDifferentElementBackwards(result, loop_counter);
+            //         std.debug.print("elem: {d}:{d}\n", .{ idx_of_different_block_or_null + 1, loop_counter + 1 });
+
+            //         const block_to_move = result[idx_of_different_block_or_null + 1 .. loop_counter + 1];
+
+            //         if (block_to_move.len <= end_empty_space - start_empty_space) {
+            //             std.debug.print("block fits, moving\n", .{});
+            //             for (0..block_to_move.len) |i| result[start_empty_space + i] = block_val;
+            //             // set what we've moved to null
+            //             for (idx_of_different_block_or_null + 1..loop_counter + 1) |i| result[i] = null;
+            //             start_empty_space += block_to_move.len;
+            //             loop_counter = idx_of_different_block_or_null;
+            //             continue :inner;
+            //         } else {
+            //             std.debug.print("block doesn't fit, continuing\n", .{});
+            //             loop_counter = idx_of_different_block_or_null;
+            //             continue :inner;
+            //         }
+
+            //         // result[result_idx] = elem_to_pack;
+            //         // result[index_from_end] = null;
+            //         break :inner;
+            //     } else {
+            //         last_null_idx_from_bottom = loop_counter;
+            //         continue :inner;
+            //     }
+            // }
         }
     }
 
