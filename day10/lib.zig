@@ -163,7 +163,7 @@ test "calculateTrailHeadScore - 2" {
         &[_]u8{ 9, 8, 7, 1, 1, 1, 1 },
     };
 
-    try testing.expectEqual(4, try calculateTrailHeadScore(testing.allocator, input, .{ .x = 2, .y = 0 }));
+    try testing.expectEqual(4, try calculateTrailHeadScore(testing.allocator, input, .{ .x = 3, .y = 0 }));
 }
 
 test "calculateTrailHeadScore - 3" {
@@ -216,7 +216,7 @@ fn calculateTrailHeadScore(allocator: std.mem.Allocator, input: []const []const 
 
         try new_list_ptr.ensureUnusedCapacity(list.items.len * 4);
         for (list.items, 0..) |coords, idx| {
-            std.debug.print("idx:{d} {any}\n", .{ idx, list.items });
+            // std.debug.print("idx:{d} {any}\n", .{ idx, list.items });
             const current_val = input[coords.y][coords.x];
 
             inner: for ([_]Direction{ .Up, .Down, .Left, .Right }) |new_direction| {
@@ -228,15 +228,30 @@ fn calculateTrailHeadScore(allocator: std.mem.Allocator, input: []const []const 
                     }
                     const diff: i16 = @as(i8, @intCast(next_val)) - @as(i8, @intCast(current_val));
                     if (diff == 1) {
+                        std.debug.print("appending: {any}\n", .{new_pos});
                         try new_list_ptr.append(new_pos);
                     }
                 } else |_| {}
             }
 
+            // this basically adds all indexes to the map
+            // so what exactly do i want to make happen here
             try to_remove.put(idx, {});
         }
+
+        var it = to_remove.iterator();
+        std.debug.print("map ", .{});
+        while (it.next()) |v| {
+            std.debug.print("{d} ", .{v.key_ptr.*});
+        }
+
+        std.debug.print("items ", .{});
         for (list.items, 0..) |elem, idx| {
-            if (!to_remove.contains(idx)) {
+            std.debug.print("{d} ", .{idx});
+            if (to_remove.contains(idx)) {
+                std.debug.print("found idx {d}, not appending\n", .{idx});
+            } else {
+                std.debug.print("appending to new list: {any}\n", .{elem});
                 try new_list_ptr.append(elem);
             }
         }
