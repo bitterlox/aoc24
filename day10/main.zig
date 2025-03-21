@@ -37,5 +37,12 @@ pub fn main() !void {
         allocator.free(input);
     }
 
-    std.debug.print("input: {s}\n", .{input});
+    const converted = try lib.convertInput(allocator, input);
+    defer {
+        for (converted) |sl| allocator.free(sl);
+        allocator.free(converted);
+    }
+
+    // std.debug.print("input: {s}\n", .{input});
+    std.debug.print("part 1: {d}\n", .{try lib.calculateAllTrailScores(allocator, converted)});
 }
