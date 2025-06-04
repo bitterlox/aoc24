@@ -327,7 +327,7 @@ test "calculateTrailHeadRating - 3" {
         &[_]u8{ 5, 6, 7, 8, 9, 1 },
     };
 
-    try testing.expectEqual(227, try calculateTrailHeadRating(testing.allocator, input, .{ .x = 2, .y = 0 }));
+    try testing.expectEqual(227, try calculateTrailHeadRating(testing.allocator, input, .{ .x = 0, .y = 0 }));
 }
 
 // should probably implement a pathfinding algorithm
@@ -357,9 +357,9 @@ pub fn calculateTrailHeadRating(allocator: std.mem.Allocator, input: []const []c
         const new_list_ptr = try allocator.create(std.ArrayList(Coords));
         new_list_ptr.* = std.ArrayList(Coords).init(allocator);
 
-        std.debug.print("list: {any}\n", .{list.items});
-        std.debug.print("score: {d}\n", .{list.items.len});
-        std.debug.print("tmp: {d}\n", .{tmp});
+        // std.debug.print("list: {any}\n", .{list.items});
+        // std.debug.print("score: {d}\n", .{list.items.len});
+        // std.debug.print("tmp: {d}\n", .{tmp});
 
         try new_list_ptr.ensureUnusedCapacity(list.items.len * 4);
         for (list.items) |coords| {
@@ -378,13 +378,13 @@ pub fn calculateTrailHeadRating(allocator: std.mem.Allocator, input: []const []c
                             score += 1;
                             continue :inner;
                         }
-                        std.debug.print("appending: current:{any} new:{any}\n", .{ coords, new_pos });
+                        // std.debug.print("appending: current:{any} new:{any}\n", .{ coords, new_pos });
                         try new_list_ptr.append(new_pos);
                     }
                 } else |_| {}
             }
         }
-        std.debug.print("new_list: {any}\n", .{new_list_ptr.*.items});
+        // std.debug.print("new_list: {any}\n", .{new_list_ptr.*.items});
 
         list.deinit();
         allocator.destroy(list);

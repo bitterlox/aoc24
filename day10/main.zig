@@ -45,4 +45,5 @@ pub fn main() !void {
 
     // std.debug.print("input: {s}\n", .{input});
     std.debug.print("part 1: {d}\n", .{try lib.calculateAllTrailScores(allocator, converted)});
+    std.debug.print("part 2: {d}\n", .{try lib.calculateAllTrailRatings(allocator, converted)});
 }
