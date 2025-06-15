@@ -7,29 +7,6 @@ const testing = std.testing;
 //     (The new numbers don't keep extra leading zeroes: 1000 would become stones 10 and 0.)
 // 3. If none of the other rules apply, the stone is replaced by a new stone; the old stone's number multiplied by 2024 is engraved on the new stone.
 
-test "applyFirstRule" {
-    const values = try testing.allocator.alloc(u64, 2);
-    defer testing.allocator.free(values);
-    values[0] = 0;
-    values[1] = 1;
-
-    const res_0 = applyFirstRule(&values[0]);
-    const res_1 = applyFirstRule(&values[1]);
-
-    try testing.expectEqual(1, values[0]);
-    try testing.expectEqual(true, res_0);
-    try testing.expectEqual(1, values[1]);
-    try testing.expectEqual(false, res_1);
-}
-
-fn applyFirstRule(stone: *u64) !bool {
-    if (stone.* == 0) {
-        stone.* = 1;
-        return true;
-    }
-    return false;
-}
-
 fn countDigits(n: u64) usize {
     if (n == 0) return 1;
 
@@ -87,176 +64,11 @@ fn applyRulesToStone(stone: u64) RulesApplicationResult {
     return RulesApplicationResult{ .third = stone * 2024 };
 }
 
-fn fillUpLinkedListFromArrayList(allocator: std.mem.Allocator, ll: *std.DoublyLinkedList(u64), al: *std.ArrayList(u64)) !void {
-    const Node = std.DoublyLinkedList(u64).Node;
-    for (al.items) |item| {
-        const node = try allocator.create(Node);
-        node.* = Node{ .data = item };
-        ll.append(node);
-    }
-}
-
-fn fillUpArrayListFromLinkedList(al: *std.ArrayList(u64), ll: *std.DoublyLinkedList(u64)) !void {
-    var firstNode: ?*std.DoublyLinkedList(u64).Node = ll.first;
-    while (firstNode) |node| {
-        firstNode = node.next;
-        try al.append(node.data);
-    }
-}
-
-fn freeNodes(allocator: std.mem.Allocator, ll: *std.DoublyLinkedList(u64)) void {
-    var firstNode: ?*std.DoublyLinkedList(u64).Node = ll.first;
-    while (firstNode) |node| {
-        firstNode = node.next;
-        allocator.destroy(node);
-    }
-}
-
-test "applyRules" {
-    const allocator = testing.allocator;
-    const llPtr = try allocator.create(std.DoublyLinkedList(u64));
-    llPtr.* = std.DoublyLinkedList(u64){};
-    defer allocator.destroy(llPtr);
-
-    const inputData = try allocator.dupe(u64, &[_]u64{ 0, 1, 10, 99, 999 });
-    const arrayListPtr = try allocator.create(std.ArrayList(u64));
-    defer allocator.destroy(arrayListPtr);
-    arrayListPtr.* = std.ArrayList(u64).fromOwnedSlice(allocator, inputData);
-
-    try fillUpLinkedListFromArrayList(allocator, llPtr, arrayListPtr);
-    defer freeNodes(allocator, llPtr);
-
-    try applyRulesToStones(allocator, llPtr);
-
-    arrayListPtr.clearAndFree();
-    try fillUpArrayListFromLinkedList(arrayListPtr, llPtr);
-
-    const actual = try arrayListPtr.toOwnedSlice();
-    defer testing.allocator.free(actual);
-
-    try testing.expectEqualSlices(u64, &[_]u64{ 1, 2024, 1, 0, 9, 9, 2021976 }, actual);
-}
-
 const RulesApplicationResult = union(enum) {
     first: u64,
     second: struct { u64, u64 },
     third: u64,
 };
-
-const Cache = std.AutoHashMap(u64, RulesApplicationResult);
-
-fn memoizedApplyRulesToStone(cache: *Cache, stone: u64) !RulesApplicationResult {
-    if (cache.get(stone)) |cached| {
-        std.debug.print("cache hit: {d} {?}\n", .{ stone, cached });
-        return cached;
-    } else {
-        const result = applyRulesToStone(stone);
-        try cache.put(stone, result);
-        return result;
-    }
-}
-
-//???
-// cache seems to not be working
-// also on reddit they're saying lanterfish
-fn applyRulesToStones(allocator: std.mem.Allocator, llPtr: *std.DoublyLinkedList(u64)) !void {
-    const Node = std.DoublyLinkedList(u64).Node;
-
-    var cache: Cache = Cache.init(allocator);
-    defer cache.deinit();
-
-    var currNode: ?*Node = llPtr.first;
-
-    while (currNode) |node| {
-        const result = if (cache.get(node.data)) |cached| blk: {
-            // std.debug.print("cache hit: {d} {?}\n", .{ node., cached });
-            break :blk cached;
-        } else blk: {
-            const result = applyRulesToStone(node.data);
-            try cache.put(node.data, result);
-            break :blk result;
-        };
-
-        switch (result) {
-            .first, .third => |newStoneValue| {
-                node.data = newStoneValue;
-                currNode = node.next;
-            },
-            .second => |newStoneValues| {
-                const upper, const lower = newStoneValues;
-
-                node.data = upper;
-
-                const newNode = try allocator.create(Node);
-                newNode.* = Node{ .data = lower };
-
-                llPtr.insertAfter(node, newNode);
-
-                // set next node
-                currNode = newNode.next;
-            },
-        }
-    }
-}
-
-test "blink" {
-    const listPtr = try testing.allocator.create(std.ArrayList(u64));
-    defer testing.allocator.destroy(listPtr);
-
-    const initData = try testing.allocator.dupe(u64, &[_]u64{ 125, 17 });
-    listPtr.* = std.ArrayList(u64).fromOwnedSlice(testing.allocator, initData);
-    defer listPtr.deinit();
-
-    try blink(listPtr, 6);
-
-    const actual = try listPtr.toOwnedSlice();
-    defer testing.allocator.free(actual);
-
-    try testing.expectEqualSlices(u64, &[_]u64{
-        2097446912, //
-        14168, //
-        4048, //
-        2, //
-        0, //
-        2, //
-        4, //
-        40,
-        48,
-        2024, //
-        40, //
-        48, //
-        80, //
-        96, //
-        2,
-        8, //
-        6,
-        7, //
-        6, //
-        0, //
-        3, //
-        2,
-    }, actual);
-}
-
-// use std.SinglyLinkedList in the implementation
-pub fn blink(stones: *std.ArrayList(u64), n: usize) !void {
-    const allocator = stones.allocator;
-    const llPtr = try allocator.create(std.DoublyLinkedList(u64));
-    llPtr.* = std.DoublyLinkedList(u64){};
-    defer allocator.destroy(llPtr);
-
-    try fillUpLinkedListFromArrayList(allocator, llPtr, stones);
-    defer freeNodes(allocator, llPtr);
-
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        // std.debug.print("running {d} blink\n", .{i});
-        try applyRulesToStones(allocator, llPtr);
-    }
-
-    stones.clearAndFree();
-    try fillUpArrayListFromLinkedList(stones, llPtr);
-}
 
 test "blinkCount - 1" {
     const listPtr = try testing.allocator.create(std.ArrayList(u64));
@@ -286,14 +98,8 @@ test "blinkCount - 2" {
 
 const CacheKey = struct { u64, usize };
 const CacheValue = struct { *usize, *std.ArrayList(*usize) };
-// represent the recursion in a map
-// store intermediate computation results like this
-// [stone, blink_count, counter]
-// as you compute stones build an arraylist of values where
-// each subsequent value is
-// [stone, blink_count-1, 0] and then go back and add 1 to counter for old values
-// at then end arraylist[0].counter should countain the actual count
-// cache all the values [stone, blink_count] -> counter
+
+// this is based on a tree structure, but the problem creates a DAG
 pub fn f(allocator: std.mem.Allocator, memoCache: *MemoCache, stone: u64, n: usize) !usize {
     const cache = try allocator.create(std.AutoHashMap(CacheKey, CacheValue));
     defer allocator.destroy(cache);
