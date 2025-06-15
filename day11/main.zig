@@ -38,8 +38,8 @@ pub fn main() !void {
         allocator.destroy(input);
     }
 
-    try lib.blink(input, 25);
-    std.debug.print("part 1: {d}\n", .{input.items.len});
+    std.debug.print("part 1: {d}\n", .{try lib.blinkCount(input, 25)});
+    std.debug.print("part 1: {d}\n", .{try lib.blinkCount(input, 75)});
 
     // try lib.blink(input, 50);
     // std.debug.print("part 2: {d}\n", .{input.items.len});
