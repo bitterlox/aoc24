@@ -99,188 +99,13 @@ test "blinkCount - 2" {
 const CacheKey = struct { u64, usize };
 const CacheValue = struct { *usize, *std.ArrayList(*usize) };
 
-// this is based on a tree structure, but the problem creates a DAG
-pub fn f(allocator: std.mem.Allocator, memoCache: *MemoCache, stone: u64, n: usize) !usize {
-    const cache = try allocator.create(std.AutoHashMap(CacheKey, CacheValue));
-    defer allocator.destroy(cache);
-    cache.* = std.AutoHashMap(CacheKey, CacheValue).init(allocator);
-
-    var stones = try allocator.create(std.ArrayList(CacheKey));
-    defer allocator.destroy(stones);
-    stones.* = std.ArrayList(CacheKey).init(allocator);
-    defer stones.deinit();
-    try stones.append(.{ stone, n });
-
-    // var c: usize = 1;
-    const c = try allocator.create(usize);
-    c.* = 1;
-    // instead of optional pointer to an array just put in an empty arraylist
-
-    const extListPtr = try allocator.create(std.ArrayList(*usize));
-    extListPtr.* = std.ArrayList(*usize).init(allocator);
-    try cache.put(.{ stone, n }, .{ c, extListPtr });
-
-    // start count at 1 due to appending the first stone above
-    var i: usize = 1;
-    // counting like this because use use 1 in the cache and it should correspond
-    // to the number of blinks
-    while (i < n + 1) : (i += 1) {
-        var currentStones = try stones.clone();
-        defer currentStones.deinit();
-
-        stones.clearRetainingCapacity();
-
-        for (currentStones.items) |elem| {
-            const stonee, const blinkNo = elem;
-
-            const result = applyRulesToStone(stonee);
-            switch (result) {
-                .first, .third => |newStoneValue| {
-                    // try stones.append(newStoneValue);
-                    // var listPtr = std.ArrayList(*usize).init(allocator);
-                    // try listPtr.append(entry.value_ptr.@"0");
-                    // var s: usize = 1;
-                    // try listPtr.append(&s);
-
-                    // if (entry.value_ptr.@"1") |parentList| for (parentList.items) |p| try listPtr.append(p);
-                    // var count: usize = 1;
-                    const parentEntry = cache.get(.{ stonee, blinkNo });
-                    const newKey = .{ newStoneValue, n - i };
-
-                    if (parentEntry) |pe| {
-                        pe.@"0".* += 1;
-                        for (pe.@"1".items) |p| {
-                            if (p != pe.@"0") p.* += 1;
-                        }
-                    }
-
-                    if (!cache.contains(newKey)) {
-                        const listPtr = try allocator.create(std.ArrayList(*usize));
-                        listPtr.* = std.ArrayList(*usize).init(allocator);
-                        const count = try allocator.create(usize);
-                        count.* = 0;
-
-                        if (parentEntry) |entry1| {
-                            try listPtr.append(entry1.@"0");
-                            for (entry1.@"1".items) |p| try listPtr.append(p);
-                        }
-
-                        try cache.put(newKey, .{ count, listPtr });
-                    }
-                    try stones.append(.{ newStoneValue, n - i });
-                },
-                .second => |newStoneValues| {
-                    const upper, const lower = newStoneValues;
-                    const key1 = .{ upper, n - i };
-                    const key2 = .{ lower, n - i };
-
-                    const entry = cache.get(.{ stonee, blinkNo });
-                    if (!cache.contains(key1)) {
-                        var list1Ptr = try allocator.create(std.ArrayList(*usize));
-                        list1Ptr.* = std.ArrayList(*usize).init(allocator);
-                        // var list1Ptr = std.ArrayList(*usize).init(allocator);
-
-                        if (entry) |entry1| {
-                            try list1Ptr.append(entry1.@"0");
-                            for (entry1.@"1".items) |p| try list1Ptr.append(p);
-                        }
-
-                        // var count1: usize = 1;
-                        const count1 = try allocator.create(usize);
-                        count1.* = 0;
-                        try cache.put(key1, .{ count1, list1Ptr });
-                    }
-                    try stones.append(.{ upper, n - i });
-
-                    const entryNew = cache.get(.{ stonee, blinkNo });
-
-                    if (!cache.contains(key2)) {
-                        var list2Ptr = try allocator.create(std.ArrayList(*usize));
-                        list2Ptr.* = std.ArrayList(*usize).init(allocator);
-                        // var list2Ptr = std.ArrayList(*usize).init(allocator);
-                        if (entryNew) |entry1| {
-                            try list2Ptr.append(entry1.@"0");
-                            for (entry1.@"1".items) |p| try list2Ptr.append(p);
-                        }
-                        // var count2: usize = 1;
-                        const count2 = try allocator.create(usize);
-                        count2.* = 0;
-                        try cache.put(key2, .{ count2, list2Ptr });
-                    }
-                    try stones.append(.{ lower, n - i });
-
-                    // std.debug.print("adding to parent: {?}\n", .{entry.value_ptr});
-                    // do i care if the items are in the cache or not when adding 1?
-                    // if (entryNew) |_entryNew| {
-                    //     // std.debug.print("parent({d}, {d})\n", .{ stonee, blinkNo });
-                    //     // std.debug.print("upper: {d}, lower:{d}\n", .{ upper, lower });
-                    //     // add 1 to the parent pointer
-                    //     _entryNew.@"0".* += 1;
-                    //     for (_entryNew.@"1".items) |ptr| {
-                    //         // add 1 to all the pointers in list which are not
-                    //         // the parent pointer
-                    //         // this exception is done because if the first stone
-                    //         // is a split, we don't have any means to add 1 to it since
-                    //         // we only increment pointers contained in the parent's list
-                    //         // and in that case the list would be empty
-                    //         // we still need to add the parent pointer to the list
-                    //         // so it is propagated down the 'tree'
-                    //         if (ptr != _entryNew.@"0") ptr.* += 1;
-                    //         // std.debug.print("adding to ptr({?}): {d}\n", .{ ptr, ptr.* });
-                    //     }
-                    // } else {
-                    //     // std.debug.print("missing item from cache\n", .{});
-                    // }
-                },
-            }
-            // std.debug.print("running stone ({d},{d})\n", .{ stonee, blinkNo });
-            // std.debug.print("stone ({d}): {d} {d}\n", .{ i, stonee, blinkNo });
-            // if (memoCache.get(.{ stonee, blinkNo })) |cachedCount| {
-            //     const parentEntry = cache.get(.{ stonee, blinkNo });
-            //     std.debug.print("cache hit ({d},{d}): {d}\n", .{ stonee, blinkNo, cachedCount });
-            //     if (parentEntry) |pe| {
-            //         pe.@"0".* += cachedCount;
-            //         for (pe.@"1".items) |p| {
-            //             if (p != pe.@"0") p.* += cachedCount;
-            //             std.debug.print("adding cached count\n", .{});
-            //         }
-            //     }
-            // } else {
-            // }
-        }
-    }
-
-    const result = cache.get(.{ stone, n }).?.@"0".*;
-    var it = cache.iterator();
-    while (it.next()) |entry| {
-        std.debug.print("cached stone ({d},{d}): {?}\n", .{ entry.key_ptr.@"0", entry.key_ptr.@"1", entry.value_ptr.@"0".* });
-        // std.debug.print("pointers: {?}\n", .{entry.value_ptr.@"1"});
-        if (!memoCache.contains(entry.key_ptr.*)) {
-            try memoCache.put(entry.key_ptr.*, entry.value_ptr.@"0".*);
-        }
-        allocator.destroy(entry.value_ptr.@"0");
-        entry.value_ptr.@"1".deinit();
-        allocator.destroy(entry.value_ptr.@"1");
-    }
-
-    cache.deinit();
-    return result;
-}
-
-pub fn g(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: usize) !usize {
+// without childmap, recomputing applyRulesToStone when counting
+pub fn f(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: usize) !usize {
     var worklist = std.ArrayList(CacheKey).init(allocator);
     defer worklist.deinit();
 
     var visitedNodes = std.AutoHashMap(CacheKey, void).init(allocator);
     defer visitedNodes.deinit();
-    var parentMap = std.AutoHashMap(CacheKey, std.ArrayList(CacheKey)).init(allocator);
-    defer {
-        var it = parentMap.iterator();
-        while (it.next()) |entry| {
-            entry.value_ptr.deinit();
-        }
-        parentMap.deinit();
-    }
 
     try worklist.append(.{ initialStone, n });
     try visitedNodes.put(.{ initialStone, n }, {});
@@ -303,13 +128,6 @@ pub fn g(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: 
         switch (result) {
             .first, .third => |newStone| {
                 const childKey: CacheKey = .{ newStone, blinkNo - 1 };
-                if (parentMap.getEntry(childKey)) |entry| {
-                    try entry.value_ptr.append(parentKey);
-                } else {
-                    var parentList = std.ArrayList(CacheKey).init(allocator);
-                    try parentList.append(parentKey);
-                    try parentMap.put(childKey, parentList);
-                }
 
                 const putResult = try visitedNodes.getOrPut(childKey);
                 if (!putResult.found_existing) try worklist.append(childKey);
@@ -318,25 +136,11 @@ pub fn g(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: 
                 const upper, const lower = newStones;
 
                 const upperChildKey: CacheKey = .{ upper, blinkNo - 1 };
-                if (parentMap.getEntry(upperChildKey)) |entry| {
-                    try entry.value_ptr.append(parentKey);
-                } else {
-                    var parentList = std.ArrayList(CacheKey).init(allocator);
-                    try parentList.append(parentKey);
-                    try parentMap.put(upperChildKey, parentList);
-                }
 
                 const putResult1 = try visitedNodes.getOrPut(upperChildKey);
                 if (!putResult1.found_existing) try worklist.append(upperChildKey);
 
                 const lowerChildKey: CacheKey = .{ lower, blinkNo - 1 };
-                if (parentMap.getEntry(lowerChildKey)) |entry| {
-                    try entry.value_ptr.append(parentKey);
-                } else {
-                    var parentList = std.ArrayList(CacheKey).init(allocator);
-                    try parentList.append(parentKey);
-                    try parentMap.put(lowerChildKey, parentList);
-                }
 
                 const putResult2 = try visitedNodes.getOrPut(lowerChildKey);
                 if (!putResult2.found_existing) try worklist.append(lowerChildKey);
@@ -370,6 +174,106 @@ pub fn g(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: 
         }
     }
 
+    return cache.get(.{ initialStone, n }).?;
+}
+
+// this should work but i don't have time to debug it
+pub fn g(allocator: std.mem.Allocator, cache: *MemoCache, initialStone: u64, n: usize) !usize {
+    var worklist = std.ArrayList(CacheKey).init(allocator);
+    defer worklist.deinit();
+
+    var visitedNodes = std.AutoHashMap(CacheKey, void).init(allocator);
+    defer visitedNodes.deinit();
+    var childMap = std.AutoHashMap(CacheKey, std.ArrayList(CacheKey)).init(allocator);
+    defer {
+        var it = childMap.iterator();
+        while (it.next()) |entry| entry.value_ptr.deinit();
+        childMap.deinit();
+    }
+
+    try worklist.append(.{ initialStone, n });
+    try visitedNodes.put(.{ initialStone, n }, {});
+
+    // std.debug.print("len: {d}\n", .{worklist.items.len});
+
+    //  idk whats going on here the optional cacheKey is not working
+    while (worklist.getLastOrNull()) |parentKey| {
+        // remove element we just retrieved from the map since .pop doesn't work
+        _ = worklist.orderedRemove(worklist.items.len - 1);
+
+        const stone, const blinkNo = parentKey;
+        if (blinkNo == 0) continue;
+
+        // std.debug.print("items: ", .{});
+        // for (worklist.items) |item| std.debug.print("({d},{d}) ", .{ item.@"0", item.@"1" });
+        // std.debug.print("\n", .{});
+
+        const result = applyRulesToStone(stone);
+        switch (result) {
+            .first, .third => |newStone| {
+                const childKey: CacheKey = .{ newStone, blinkNo - 1 };
+                if (childMap.getEntry(parentKey)) |entry| {
+                    try entry.value_ptr.append(childKey);
+                } else {
+                    var childrenList = std.ArrayList(CacheKey).init(allocator);
+                    try childrenList.append(childKey);
+                    try childMap.put(parentKey, childrenList);
+                }
+
+                const putResult = try visitedNodes.getOrPut(parentKey);
+                if (!putResult.found_existing) try worklist.append(parentKey);
+            },
+            .second => |newStones| {
+                const upper, const lower = newStones;
+
+                const upperChildKey: CacheKey = .{ upper, blinkNo - 1 };
+                if (childMap.getEntry(upperChildKey)) |entry| {
+                    try entry.value_ptr.append(upperChildKey);
+                } else {
+                    var childrenList = std.ArrayList(CacheKey).init(allocator);
+                    try childrenList.append(upperChildKey);
+                    try childMap.put(upperChildKey, childrenList);
+                }
+
+                const putResult1 = try visitedNodes.getOrPut(upperChildKey);
+                if (!putResult1.found_existing) try worklist.append(upperChildKey);
+
+                const lowerChildKey: CacheKey = .{ lower, blinkNo - 1 };
+                if (childMap.getEntry(lowerChildKey)) |entry| {
+                    try entry.value_ptr.append(lowerChildKey);
+                } else {
+                    var childrenList = std.ArrayList(CacheKey).init(allocator);
+                    try childrenList.append(lowerChildKey);
+                    try childMap.put(lowerChildKey, childrenList);
+                }
+
+                const putResult2 = try visitedNodes.getOrPut(lowerChildKey);
+                if (!putResult2.found_existing) try worklist.append(lowerChildKey);
+            },
+        }
+    }
+
+    for (0..n + 1) |currentBlink| {
+        var it = visitedNodes.iterator();
+        innerWhile: while (it.next()) |entry| {
+            const entryBlinkNo = entry.key_ptr.@"1";
+            if (entryBlinkNo > 0) {
+                if (entryBlinkNo != currentBlink) continue :innerWhile;
+                const maybeChildren = childMap.get(.{ entry.key_ptr.@"0", currentBlink });
+                if (maybeChildren) |children| {
+                    var count: usize = 0;
+                    for (children.items) |child| {
+                        std.debug.print("parent: {d},{d}, child: {d},{d}", .{ entry.key_ptr.@"0", entry.key_ptr.@"1", child.@"0", child.@"1" });
+                        const cachedStoneValue = cache.get(child);
+                        count += cachedStoneValue.?;
+                    }
+                }
+            } else {
+                try cache.put(entry.key_ptr.*, 1);
+            }
+        }
+    }
+
     // var it = parentMap.iterator();
     // while (it.next()) |entry| {
     //     std.debug.print("({d},{d}) <- ", .{ entry.key_ptr.@"0", entry.key_ptr.@"1" });
@@ -394,7 +298,7 @@ pub fn blinkCount(stones: *std.ArrayList(u64), n: usize) !usize {
     var count: usize = 0;
 
     for (stones.items) |stone| {
-        const result = try g(allocator, &memoCache, stone, n);
+        const result = try f(allocator, &memoCache, stone, n);
         // std.debug.print("count {d}\n", .{result});
         count += result;
     }
